@@ -1,0 +1,29 @@
+{
+  "name": "openapi-db",
+  "version": "1.0.0",
+  "description": "Express middleware that serves REST API endpoints from OpenAPI spec with SQL queries",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.18.3",
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.9",
+    "@types/pg": "^8.16.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.17.1",
+    "yaml": "^2.8.2"
+  }
+}
