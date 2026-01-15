@@ -1,0 +1,78 @@
+openapi: "3.0.3"
+info:
+  title: Integration Test API
+  version: "1.0.0"
+
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      x-db:
+        query: |
+          SELECT id, first_name, last_name, status
+          FROM users
+          WHERE tenant_id = $auth.tenantId
+            AND status = $.default($query.status, 'active')
+          ORDER BY first_name
+        response:
+          fields:
+            firstName: first_name
+            lastName: last_name
+
+    post:
+      summary: Create user
+      x-db:
+        query: |
+          INSERT INTO users (id, first_name, last_name, tenant_id, status)
+          VALUES ($.uuid(), $body.firstName, $body.lastName, $auth.tenantId, 'active')
+          RETURNING id, first_name, last_name, status
+        response:
+          type: first
+          fields:
+            firstName: first_name
+            lastName: last_name
+
+  /users/count:
+    get:
+      summary: Get user count
+      x-db:
+        query: SELECT COUNT(*)::int FROM users WHERE tenant_id = $auth.tenantId
+        response:
+          type: value
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        query: |
+          SELECT id, first_name, last_name, status
+          FROM users
+          WHERE id = $path.id AND tenant_id = $auth.tenantId
+        response:
+          type: first
+          fields:
+            firstName: first_name
+            lastName: last_name
+
+    delete:
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        query: |
+          DELETE FROM users
+          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          RETURNING id
+        response:
+          type: first

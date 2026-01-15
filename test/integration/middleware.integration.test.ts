@@ -3,122 +3,46 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { Pool } from "pg";
 import express from "express";
 import request from "supertest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { openApiDb } from "../../src/frameworks/express.js";
-import type { OpenApiSpec } from "../../src/types.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.join(__dirname, "fixtures");
+
+const specPath = path.join(fixturesDir, "openapi.yaml");
+const schemaPath = path.join(fixturesDir, "schema.sql");
+const seedPath = path.join(fixturesDir, "seed.sql");
 
 describe("openApiDb middleware integration", () => {
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
   let app: express.Application;
 
-  const spec: OpenApiSpec = {
-    openapi: "3.0.3",
-    info: { title: "Test API", version: "1.0.0" },
-    paths: {
-      "/users": {
-        get: {
-          parameters: [
-            { name: "status", in: "query", schema: { type: "string" } },
-          ],
-          "x-db": {
-            query: `
-              SELECT id, first_name, last_name, status
-              FROM users
-              WHERE tenant_id = $auth.tenantId
-                AND status = $.default($query.status, 'active')
-              ORDER BY first_name
-            `,
-            response: {
-              fields: { firstName: "first_name", lastName: "last_name" },
-            },
-          },
-        },
-        post: {
-          "x-db": {
-            query: `
-              INSERT INTO users (id, first_name, last_name, tenant_id, status)
-              VALUES ($.uuid(), $body.firstName, $body.lastName, $auth.tenantId, 'active')
-              RETURNING id, first_name, last_name, status
-            `,
-            response: {
-              type: "first",
-              fields: { firstName: "first_name", lastName: "last_name" },
-            },
-          },
-        },
-      },
-      "/users/count": {
-        get: {
-          "x-db": {
-            query: `SELECT COUNT(*)::int FROM users WHERE tenant_id = $auth.tenantId`,
-            response: { type: "value" },
-          },
-        },
-      },
-      "/users/{id}": {
-        get: {
-          parameters: [{ name: "id", in: "path", required: true }],
-          "x-db": {
-            query: `
-              SELECT id, first_name, last_name, status
-              FROM users
-              WHERE id = $path.id AND tenant_id = $auth.tenantId
-            `,
-            response: {
-              type: "first",
-              fields: { firstName: "first_name", lastName: "last_name" },
-            },
-          },
-        },
-        delete: {
-          parameters: [{ name: "id", in: "path", required: true }],
-          "x-db": {
-            query: `
-              DELETE FROM users
-              WHERE id = $path.id AND tenant_id = $auth.tenantId
-              RETURNING id
-            `,
-            response: { type: "first" },
-          },
-        },
-      },
-    },
-  };
-
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:16-alpine").start();
-
     pool = new Pool({ connectionString: container.getConnectionUri() });
 
-    await pool.query(`
-      CREATE TABLE users (
-        id UUID PRIMARY KEY,
-        first_name TEXT NOT NULL,
-        last_name TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        status TEXT DEFAULT 'active'
-      )
-    `);
+    // Load and execute schema
+    const schema = fs.readFileSync(schemaPath, "utf-8");
+    await pool.query(schema);
 
-    // Seed test data
-    await pool.query(`
-      INSERT INTO users (id, first_name, last_name, tenant_id, status) VALUES
-        ('11111111-1111-1111-1111-111111111111', 'Alice', 'Smith', 'tenant-1', 'active'),
-        ('22222222-2222-2222-2222-222222222222', 'Bob', 'Jones', 'tenant-1', 'active'),
-        ('33333333-3333-3333-3333-333333333333', 'Charlie', 'Brown', 'tenant-1', 'inactive'),
-        ('44444444-4444-4444-4444-444444444444', 'Dave', 'Wilson', 'tenant-2', 'active')
-    `);
+    // Load and execute seed data
+    const seed = fs.readFileSync(seedPath, "utf-8");
+    await pool.query(seed);
 
+    // Create Express app with middleware
     app = express();
     app.use(express.json());
     app.use(
       openApiDb({
-        spec,
+        spec: specPath,
         db: pool,
         auth: async () => ({ tenantId: "tenant-1" }),
       })
     );
-  }, 60000); // 60s timeout for container startup
+  }, 60000);
 
   afterAll(async () => {
     await pool.end();
