@@ -4,7 +4,7 @@ import type { XDbResponse } from "../types.js";
 export interface ExecuteOptions {
   sql: string;
   values: unknown[];
-  response?: XDbResponse;
+  response?: XDbResponse | undefined;
 }
 
 /**
