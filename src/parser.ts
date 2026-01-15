@@ -1,0 +1,88 @@
+import * as fs from "node:fs";
+import * as yaml from "yaml";
+import type {
+  OpenApiSpec,
+  OpenApiParameter,
+  ParsedRoute,
+  HttpMethod,
+} from "./types.js";
+
+const HTTP_METHODS: HttpMethod[] = ["get", "post", "put", "delete", "patch"];
+
+/**
+ * Parse an OpenAPI spec and extract routes with x-db extensions.
+ */
+export function parseSpec(spec: string | OpenApiSpec): ParsedRoute[] {
+  const parsed = typeof spec === "string" ? loadSpec(spec) : spec;
+  return extractRoutes(parsed);
+}
+
+/**
+ * Load an OpenAPI spec from a file path.
+ */
+function loadSpec(filePath: string): OpenApiSpec {
+  const content = fs.readFileSync(filePath, "utf-8");
+  if (filePath.endsWith(".yaml") || filePath.endsWith(".yml")) {
+    return yaml.parse(content) as OpenApiSpec;
+  }
+  return JSON.parse(content) as OpenApiSpec;
+}
+
+/**
+ * Extract all routes with x-db extensions from the spec.
+ */
+function extractRoutes(spec: OpenApiSpec): ParsedRoute[] {
+  const routes: ParsedRoute[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    const pathParams = pathItem.parameters ?? [];
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!operation?.["x-db"]) continue;
+
+      routes.push({
+        path: convertPath(path),
+        originalPath: path,
+        method,
+        xDb: operation["x-db"],
+        parameters: mergeParameters(pathParams, operation.parameters ?? []),
+      });
+    }
+  }
+
+  return routes;
+}
+
+/**
+ * Convert OpenAPI path parameters to Express style.
+ * /users/{userId}/posts/{postId} => /users/:userId/posts/:postId
+ */
+export function convertPath(openApiPath: string): string {
+  return openApiPath.replace(/\{([^}]+)\}/g, ":$1");
+}
+
+/**
+ * Merge path-level and operation-level parameters.
+ * Operation parameters override path parameters with the same name and location.
+ */
+function mergeParameters(
+  pathParams: OpenApiParameter[],
+  operationParams: OpenApiParameter[]
+): OpenApiParameter[] {
+  const merged = new Map<string, OpenApiParameter>();
+
+  // Add path-level params first
+  for (const param of pathParams) {
+    const key = `${param.in}:${param.name}`;
+    merged.set(key, param);
+  }
+
+  // Override with operation-level params
+  for (const param of operationParams) {
+    const key = `${param.in}:${param.name}`;
+    merged.set(key, param);
+  }
+
+  return [...merged.values()];
+}
