@@ -7,17 +7,22 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude 'test/integration/**'",
+    "test:watch": "vitest --exclude 'test/integration/**'",
+    "test:integration": "vitest run test/integration",
+    "test:all": "vitest run"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.18.3",
   "devDependencies": {
+    "@testcontainers/postgresql": "^11.11.0",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.9",
     "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.2.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },
