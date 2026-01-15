@@ -1,0 +1,129 @@
+openapi: 3.0.3
+info:
+  title: Test API
+  version: 1.0.0
+
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      x-db:
+        query: |
+          SELECT id, first_name, last_name, email, status, created_at
+          FROM users
+          WHERE tenant_id = $auth.tenantId
+            AND status = $.default($query.status, 'active')
+          ORDER BY created_at DESC
+          LIMIT $.default($query.limit, 20)
+        response:
+          fields:
+            firstName: first_name
+            lastName: last_name
+            createdAt: created_at
+
+    post:
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+      x-db:
+        query: |
+          INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
+          VALUES ($.uuid(), $body.firstName, $body.lastName, $body.email, $auth.tenantId, $.now())
+          RETURNING id, first_name, last_name, email, created_at
+        response:
+          type: first
+          fields:
+            firstName: first_name
+            lastName: last_name
+            createdAt: created_at
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-db:
+        query: |
+          SELECT id, first_name, last_name, email, status, created_at
+          FROM users
+          WHERE id = $path.id AND tenant_id = $auth.tenantId
+        response:
+          type: first
+          fields:
+            firstName: first_name
+            lastName: last_name
+            createdAt: created_at
+
+    delete:
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-db:
+        query: |
+          DELETE FROM users
+          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          RETURNING id
+        response:
+          type: first
+
+  /users/search:
+    get:
+      summary: Search users by IDs
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+      x-db:
+        query: |
+          SELECT id, first_name, last_name
+          FROM users
+          WHERE id = ANY($query.ids) AND tenant_id = $auth.tenantId
+        response:
+          fields:
+            firstName: first_name
+            lastName: last_name
+
+  /stats/user-count:
+    get:
+      summary: Get total user count
+      x-db:
+        query: |
+          SELECT COUNT(*)::int as count FROM users WHERE tenant_id = $auth.tenantId
+        response:
+          type: value
