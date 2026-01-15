@@ -3,7 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { Pool } from "pg";
 import express from "express";
 import request from "supertest";
-import { openApiDb } from "../../src/index.js";
+import { openApiDb } from "../../src/frameworks/express.js";
 import type { OpenApiSpec } from "../../src/types.js";
 
 describe("openApiDb middleware integration", () => {

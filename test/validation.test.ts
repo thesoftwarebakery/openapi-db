@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validateRoutes } from "../src/index.js";
-import type { ParsedRoute, OpenApiDbOptions } from "../src/types.js";
-import type { Pool } from "pg";
-
-// Mock pool - not used in validation tests
-const mockPool = {} as Pool;
+import { validateRoutes, type ValidationOptions } from "../src/validation.js";
+import type { ParsedRoute } from "../src/types.js";
 
 function makeRoute(overrides: Partial<ParsedRoute> = {}): ParsedRoute {
   return {
@@ -17,12 +13,8 @@ function makeRoute(overrides: Partial<ParsedRoute> = {}): ParsedRoute {
   };
 }
 
-function makeOptions(overrides: Partial<OpenApiDbOptions> = {}): OpenApiDbOptions {
-  return {
-    spec: { openapi: "3.0.3", info: { title: "Test", version: "1.0.0" }, paths: {} },
-    db: mockPool,
-    ...overrides,
-  };
+function makeOptions(overrides: Partial<ValidationOptions> = {}): ValidationOptions {
+  return { ...overrides };
 }
 
 describe("validateRoutes", () => {
