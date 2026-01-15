@@ -1,0 +1,48 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Test API (JSON)",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "summary": "List items",
+        "x-db": {
+          "query": "SELECT id, name FROM items ORDER BY name"
+        }
+      },
+      "post": {
+        "summary": "Create item",
+        "x-db": {
+          "query": "INSERT INTO items (id, name) VALUES ($.uuid(), $body.name) RETURNING id, name",
+          "response": {
+            "type": "first"
+          }
+        }
+      }
+    },
+    "/items/{id}": {
+      "get": {
+        "summary": "Get item by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "x-db": {
+          "query": "SELECT id, name FROM items WHERE id = $path.id",
+          "response": {
+            "type": "first"
+          }
+        }
+      }
+    }
+  }
+}

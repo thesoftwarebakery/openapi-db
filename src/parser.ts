@@ -11,6 +11,12 @@ const HTTP_METHODS: HttpMethod[] = ["get", "post", "put", "delete", "patch"];
 
 /**
  * Parse an OpenAPI spec and extract routes with x-db extensions.
+ *
+ * @param spec - Can be:
+ *   - A file path (ending in .yaml, .yml, or .json)
+ *   - YAML content string (detected by starting with 'openapi:' or common YAML patterns)
+ *   - JSON content string (detected by starting with '{')
+ *   - A pre-parsed OpenAPI spec object
  */
 export function parseSpec(spec: string | OpenApiSpec): ParsedRoute[] {
   const parsed = typeof spec === "string" ? loadSpec(spec) : spec;
@@ -18,9 +24,48 @@ export function parseSpec(spec: string | OpenApiSpec): ParsedRoute[] {
 }
 
 /**
+ * Load an OpenAPI spec from a file path or content string.
+ */
+function loadSpec(input: string): OpenApiSpec {
+  const trimmed = input.trim();
+
+  // Detect if input is content rather than a file path
+  if (isYamlContent(trimmed)) {
+    return yaml.parse(trimmed) as OpenApiSpec;
+  }
+
+  if (isJsonContent(trimmed)) {
+    return JSON.parse(trimmed) as OpenApiSpec;
+  }
+
+  // Treat as file path
+  return loadSpecFromFile(input);
+}
+
+/**
+ * Check if string looks like YAML content.
+ */
+function isYamlContent(input: string): boolean {
+  // YAML content typically starts with these patterns
+  return (
+    input.startsWith("openapi:") ||
+    input.startsWith("swagger:") ||
+    input.startsWith("---") ||
+    input.startsWith("%YAML")
+  );
+}
+
+/**
+ * Check if string looks like JSON content.
+ */
+function isJsonContent(input: string): boolean {
+  return input.startsWith("{");
+}
+
+/**
  * Load an OpenAPI spec from a file path.
  */
-function loadSpec(filePath: string): OpenApiSpec {
+function loadSpecFromFile(filePath: string): OpenApiSpec {
   const content = fs.readFileSync(filePath, "utf-8");
   if (filePath.endsWith(".yaml") || filePath.endsWith(".yml")) {
     return yaml.parse(content) as OpenApiSpec;

@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { parseSpec, convertPath } from "../src/parser.js";
 import type { OpenApiSpec } from "../src/types.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("convertPath", () => {
   it("converts single path parameter", () => {
@@ -189,5 +193,193 @@ describe("parseSpec", () => {
       type: "first",
       fields: { firstName: "first_name" },
     });
+  });
+});
+
+describe("parseSpec with YAML content", () => {
+  it("parses YAML string starting with openapi:", () => {
+    const yamlContent = `
+openapi: "3.0.3"
+info:
+  title: Test API
+  version: "1.0.0"
+paths:
+  /users:
+    get:
+      x-db:
+        query: SELECT * FROM users
+`;
+    const routes = parseSpec(yamlContent);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.path).toBe("/users");
+    expect(routes[0]?.xDb.query).toBe("SELECT * FROM users");
+  });
+
+  it("parses YAML string starting with ---", () => {
+    const yamlContent = `---
+openapi: "3.0.3"
+info:
+  title: Test API
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      x-db:
+        query: SELECT * FROM items
+`;
+    const routes = parseSpec(yamlContent);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.path).toBe("/items");
+  });
+
+  it("parses YAML with complex x-db configuration", () => {
+    const yamlContent = `
+openapi: "3.0.3"
+info:
+  title: Test API
+  version: "1.0.0"
+paths:
+  /users/{id}:
+    get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        query: |
+          SELECT id, first_name, last_name
+          FROM users
+          WHERE id = $path.id
+        response:
+          type: first
+          fields:
+            firstName: first_name
+            lastName: last_name
+`;
+    const routes = parseSpec(yamlContent);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.path).toBe("/users/:id");
+    expect(routes[0]?.xDb.response?.type).toBe("first");
+    expect(routes[0]?.xDb.response?.fields).toEqual({
+      firstName: "first_name",
+      lastName: "last_name",
+    });
+  });
+
+  it("parses YAML with multiple routes and methods", () => {
+    const yamlContent = `
+openapi: "3.0.3"
+info:
+  title: Test API
+  version: "1.0.0"
+paths:
+  /users:
+    get:
+      x-db:
+        query: SELECT * FROM users
+    post:
+      x-db:
+        query: INSERT INTO users (name) VALUES ($body.name)
+        response:
+          type: first
+  /posts:
+    get:
+      x-db:
+        query: SELECT * FROM posts
+`;
+    const routes = parseSpec(yamlContent);
+    expect(routes).toHaveLength(3);
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /users");
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("post /users");
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /posts");
+  });
+
+  it("handles YAML with leading newline", () => {
+    const yamlContent = `
+openapi: "3.0.3"
+info:
+  title: Test
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      x-db:
+        query: SELECT 1
+`;
+    const routes = parseSpec(yamlContent);
+    expect(routes).toHaveLength(1);
+  });
+});
+
+describe("parseSpec with JSON content", () => {
+  it("parses JSON string", () => {
+    const jsonContent = JSON.stringify({
+      openapi: "3.0.3",
+      info: { title: "Test", version: "1.0.0" },
+      paths: {
+        "/users": {
+          get: {
+            "x-db": { query: "SELECT * FROM users" },
+          },
+        },
+      },
+    });
+
+    const routes = parseSpec(jsonContent);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.path).toBe("/users");
+  });
+
+  it("parses formatted JSON string", () => {
+    const jsonContent = `{
+  "openapi": "3.0.3",
+  "info": { "title": "Test", "version": "1.0.0" },
+  "paths": {
+    "/items": {
+      "get": {
+        "x-db": {
+          "query": "SELECT * FROM items",
+          "response": { "type": "array" }
+        }
+      }
+    }
+  }
+}`;
+    const routes = parseSpec(jsonContent);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.path).toBe("/items");
+    expect(routes[0]?.xDb.response?.type).toBe("array");
+  });
+
+  it("parses JSON with leading whitespace", () => {
+    const jsonContent = `
+    {
+      "openapi": "3.0.3",
+      "info": { "title": "Test", "version": "1.0.0" },
+      "paths": {
+        "/test": {
+          "get": { "x-db": { "query": "SELECT 1" } }
+        }
+      }
+    }`;
+    const routes = parseSpec(jsonContent);
+    expect(routes).toHaveLength(1);
+  });
+});
+
+describe("parseSpec with file paths", () => {
+  it("loads YAML file from path", () => {
+    const filePath = path.join(__dirname, "fixtures", "openapi.yaml");
+    const routes = parseSpec(filePath);
+    expect(routes.length).toBeGreaterThan(0);
+  });
+
+  it("loads JSON file from path", () => {
+    const filePath = path.join(__dirname, "fixtures", "openapi.json");
+    const routes = parseSpec(filePath);
+    expect(routes).toHaveLength(3);
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /items");
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("post /items");
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /items/:id");
   });
 });
