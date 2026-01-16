@@ -18,12 +18,12 @@ describe("OpenAPI fixture parsing", () => {
     const specPath = path.join(fixturesDir, "openapi.yaml");
     const routes = parseSpec(specPath);
 
-    const routeKeys = routes.map((r) => `${r.method} ${r.path}`);
+    const routeKeys = routes.map((r) => `${r.method} ${r.originalPath}`);
 
     expect(routeKeys).toContain("get /users");
     expect(routeKeys).toContain("post /users");
-    expect(routeKeys).toContain("get /users/:id");
-    expect(routeKeys).toContain("delete /users/:id");
+    expect(routeKeys).toContain("get /users/{id}");
+    expect(routeKeys).toContain("delete /users/{id}");
     expect(routeKeys).toContain("get /users/search");
     expect(routeKeys).toContain("get /stats/user-count");
   });
@@ -33,7 +33,7 @@ describe("OpenAPI fixture parsing", () => {
     const routes = parseSpec(specPath);
 
     const getUserById = routes.find(
-      (r) => r.method === "get" && r.path === "/users/:id"
+      (r) => r.method === "get" && r.originalPath === "/users/{id}"
     );
     expect(getUserById?.xDb.response).toEqual({
       type: "first",
@@ -45,7 +45,7 @@ describe("OpenAPI fixture parsing", () => {
     });
 
     const getUserCount = routes.find(
-      (r) => r.method === "get" && r.path === "/stats/user-count"
+      (r) => r.method === "get" && r.originalPath === "/stats/user-count"
     );
     expect(getUserCount?.xDb.response).toEqual({
       type: "value",
@@ -57,7 +57,7 @@ describe("OpenAPI fixture parsing", () => {
     const routes = parseSpec(specPath);
 
     const listUsers = routes.find(
-      (r) => r.method === "get" && r.path === "/users"
+      (r) => r.method === "get" && r.originalPath === "/users"
     );
     const paramNames = listUsers?.parameters.map((p) => p.name);
 

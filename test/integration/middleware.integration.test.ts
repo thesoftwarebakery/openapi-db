@@ -6,7 +6,7 @@ import request from "supertest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openApiDb } from "../../src/frameworks/express.js";
+import { createRouter, OpenApiDbError, type Router } from "../../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, "fixtures");
@@ -15,10 +15,11 @@ const specPath = path.join(fixturesDir, "openapi.yaml");
 const schemaPath = path.join(fixturesDir, "schema.sql");
 const seedPath = path.join(fixturesDir, "seed.sql");
 
-describe("openApiDb middleware integration", () => {
+describe("createRouter integration", () => {
   let container: StartedPostgreSqlContainer;
   let pool: Pool;
   let app: express.Application;
+  let router: Router;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:16-alpine").start();
@@ -32,16 +33,29 @@ describe("openApiDb middleware integration", () => {
     const seed = fs.readFileSync(seedPath, "utf-8");
     await pool.query(seed);
 
-    // Create Express app with middleware
+    // Create router
+    router = await createRouter({
+      spec: specPath,
+      db: pool,
+      auth: async () => ({ tenantId: "tenant-1" }),
+    });
+
+    // Create Express app with middleware adapter
     app = express();
     app.use(express.json());
-    app.use(
-      openApiDb({
-        spec: specPath,
-        db: pool,
-        auth: async () => ({ tenantId: "tenant-1" }),
-      })
-    );
+    app.use(async (req, res, next) => {
+      try {
+        const response = await router.handle(req);
+        if (!response) return next();
+        res.status(response.status).json(response.body);
+      } catch (err) {
+        if (err instanceof OpenApiDbError) {
+          res.status(err.status).json({ error: err.message, correlationId: "test" });
+        } else {
+          next(err);
+        }
+      }
+    });
   }, 60000);
 
   afterAll(async () => {
@@ -92,7 +106,7 @@ describe("openApiDb middleware integration", () => {
         .expect(404);
 
       expect(response.body).toHaveProperty("correlationId");
-      expect(response.body.error).toBe("Not Found");
+      expect(response.body.error).toBe("Resource not found");
     });
 
     it("returns 404 for user in different tenant", async () => {

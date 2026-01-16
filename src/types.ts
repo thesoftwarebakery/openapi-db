@@ -1,10 +1,10 @@
+import type { IncomingMessage } from "node:http";
 import type { Pool } from "pg";
-import type { Request } from "express";
 
 /**
- * Configuration options for the openapi-db middleware
+ * Configuration options for the router
  */
-export interface OpenApiDbOptions {
+export interface RouterOptions {
   /** Path to OpenAPI spec file (YAML/JSON), or pre-parsed spec object */
   spec: string | OpenApiSpec;
 
@@ -16,8 +16,24 @@ export interface OpenApiDbOptions {
 }
 
 export type AuthResolver = (
-  req: Request
+  req: IncomingMessage
 ) => Promise<Record<string, unknown> | null>;
+
+/**
+ * Router interface returned by createRouter
+ */
+export interface Router {
+  handle(req: IncomingMessage): Promise<RouterResponse | null>;
+}
+
+/**
+ * Response object returned by router.handle()
+ */
+export interface RouterResponse {
+  status: number;
+  headers?: Record<string, string>;
+  body: unknown;
+}
 
 /**
  * The x-db extension schema for OpenAPI operations
@@ -46,14 +62,17 @@ export interface XDbResponse {
 }
 
 /**
- * A parsed route with Express-style path and x-db configuration
+ * A compiled route with regex pattern for matching
  */
-export interface ParsedRoute {
-  /** Express-style path, e.g., /users/:id */
-  path: string;
-
+export interface CompiledRoute {
   /** HTTP method (lowercase): get, post, put, delete, patch */
   method: HttpMethod;
+
+  /** Regex pattern for matching paths */
+  pattern: RegExp;
+
+  /** Names of path parameters in order */
+  paramNames: string[];
 
   /** The x-db extension configuration */
   xDb: XDbExtension;
@@ -61,8 +80,19 @@ export interface ParsedRoute {
   /** OpenAPI parameter definitions for this route */
   parameters: OpenApiParameter[];
 
+  /** Whether this route uses $auth.* variables */
+  usesAuth: boolean;
+
   /** Original OpenAPI path for error messages, e.g., /users/{id} */
   originalPath: string;
+}
+
+/**
+ * Result of matching a request against compiled routes
+ */
+export interface RouteMatch {
+  route: CompiledRoute;
+  pathParams: Record<string, string>;
 }
 
 export type HttpMethod = "get" | "post" | "put" | "delete" | "patch";

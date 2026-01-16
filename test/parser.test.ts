@@ -1,26 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseSpec, convertPath } from "../src/parser.js";
+import { parseSpec } from "../src/parser.js";
 import type { OpenApiSpec } from "../src/types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-describe("convertPath", () => {
-  it("converts single path parameter", () => {
-    expect(convertPath("/users/{id}")).toBe("/users/:id");
-  });
-
-  it("converts multiple path parameters", () => {
-    expect(convertPath("/users/{userId}/posts/{postId}")).toBe(
-      "/users/:userId/posts/:postId"
-    );
-  });
-
-  it("leaves paths without parameters unchanged", () => {
-    expect(convertPath("/users")).toBe("/users");
-  });
-});
 
 describe("parseSpec", () => {
   it("extracts routes with x-db extensions", () => {
@@ -40,10 +24,11 @@ describe("parseSpec", () => {
     const routes = parseSpec(spec);
     expect(routes).toHaveLength(1);
     expect(routes[0]).toMatchObject({
-      path: "/users",
+      originalPath: "/users",
       method: "get",
       xDb: { query: "SELECT * FROM users" },
     });
+    expect(routes[0]?.pattern.test("/users")).toBe(true);
   });
 
   it("ignores operations without x-db", () => {
@@ -62,10 +47,10 @@ describe("parseSpec", () => {
 
     const routes = parseSpec(spec);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/users");
+    expect(routes[0]?.originalPath).toBe("/users");
   });
 
-  it("converts OpenAPI path params to Express style", () => {
+  it("compiles OpenAPI path params to regex pattern", () => {
     const spec: OpenApiSpec = {
       openapi: "3.0.3",
       info: { title: "Test", version: "1.0.0" },
@@ -83,8 +68,9 @@ describe("parseSpec", () => {
     };
 
     const routes = parseSpec(spec);
-    expect(routes[0]?.path).toBe("/users/:userId/posts/:postId");
     expect(routes[0]?.originalPath).toBe("/users/{userId}/posts/{postId}");
+    expect(routes[0]?.paramNames).toEqual(["userId", "postId"]);
+    expect(routes[0]?.pattern.test("/users/123/posts/456")).toBe(true);
   });
 
   it("preserves original path for error messages", () => {
@@ -211,7 +197,7 @@ paths:
 `;
     const routes = parseSpec(yamlContent);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/users");
+    expect(routes[0]?.originalPath).toBe("/users");
     expect(routes[0]?.xDb.query).toBe("SELECT * FROM users");
   });
 
@@ -229,7 +215,7 @@ paths:
 `;
     const routes = parseSpec(yamlContent);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/items");
+    expect(routes[0]?.originalPath).toBe("/items");
   });
 
   it("parses YAML with complex x-db configuration", () => {
@@ -258,7 +244,7 @@ paths:
 `;
     const routes = parseSpec(yamlContent);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/users/:id");
+    expect(routes[0]?.originalPath).toBe("/users/{id}");
     expect(routes[0]?.xDb.response?.type).toBe("first");
     expect(routes[0]?.xDb.response?.fields).toEqual({
       firstName: "first_name",
@@ -289,9 +275,9 @@ paths:
 `;
     const routes = parseSpec(yamlContent);
     expect(routes).toHaveLength(3);
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /users");
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("post /users");
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /posts");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("get /users");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("post /users");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("get /posts");
   });
 
   it("handles YAML with leading newline", () => {
@@ -327,7 +313,7 @@ describe("parseSpec with JSON content", () => {
 
     const routes = parseSpec(jsonContent);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/users");
+    expect(routes[0]?.originalPath).toBe("/users");
   });
 
   it("parses formatted JSON string", () => {
@@ -347,7 +333,7 @@ describe("parseSpec with JSON content", () => {
 }`;
     const routes = parseSpec(jsonContent);
     expect(routes).toHaveLength(1);
-    expect(routes[0]?.path).toBe("/items");
+    expect(routes[0]?.originalPath).toBe("/items");
     expect(routes[0]?.xDb.response?.type).toBe("array");
   });
 
@@ -378,8 +364,8 @@ describe("parseSpec with file paths", () => {
     const filePath = path.join(__dirname, "fixtures", "openapi.json");
     const routes = parseSpec(filePath);
     expect(routes).toHaveLength(3);
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /items");
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("post /items");
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toContain("get /items/:id");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("get /items");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("post /items");
+    expect(routes.map((r) => `${r.method} ${r.originalPath}`)).toContain("get /items/{id}");
   });
 });

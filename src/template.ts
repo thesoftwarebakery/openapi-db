@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { InterpolationContext, ParsedQuery } from "./types.js";
+import { OpenApiDbError } from "./errors.js";
 
 type VariableSource = "path" | "query" | "body" | "auth";
 
@@ -380,6 +381,6 @@ function evaluateFunction(
       return randomUUID();
 
     default:
-      throw new Error(`Unknown function: $.${name}`);
+      throw new OpenApiDbError("UNKNOWN_FUNCTION", `Unknown function: $.${name}`);
   }
 }

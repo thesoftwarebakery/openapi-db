@@ -1,11 +1,7 @@
 import * as fs from "node:fs";
 import * as yaml from "yaml";
-import type {
-  OpenApiSpec,
-  OpenApiParameter,
-  ParsedRoute,
-  HttpMethod,
-} from "./types.js";
+import type { OpenApiSpec, OpenApiParameter, CompiledRoute, HttpMethod } from "./types.js";
+import { compileRoute } from "./matcher.js";
 
 const HTTP_METHODS: HttpMethod[] = ["get", "post", "put", "delete", "patch"];
 
@@ -18,7 +14,7 @@ const HTTP_METHODS: HttpMethod[] = ["get", "post", "put", "delete", "patch"];
  *   - JSON content string (detected by starting with '{')
  *   - A pre-parsed OpenAPI spec object
  */
-export function parseSpec(spec: string | OpenApiSpec): ParsedRoute[] {
+export function parseSpec(spec: string | OpenApiSpec): CompiledRoute[] {
   const parsed = typeof spec === "string" ? loadSpec(spec) : spec;
   return extractRoutes(parsed);
 }
@@ -76,8 +72,8 @@ function loadSpecFromFile(filePath: string): OpenApiSpec {
 /**
  * Extract all routes with x-db extensions from the spec.
  */
-function extractRoutes(spec: OpenApiSpec): ParsedRoute[] {
-  const routes: ParsedRoute[] = [];
+function extractRoutes(spec: OpenApiSpec): CompiledRoute[] {
+  const routes: CompiledRoute[] = [];
 
   for (const [path, pathItem] of Object.entries(spec.paths)) {
     const pathParams = pathItem.parameters ?? [];
@@ -86,25 +82,12 @@ function extractRoutes(spec: OpenApiSpec): ParsedRoute[] {
       const operation = pathItem[method];
       if (!operation?.["x-db"]) continue;
 
-      routes.push({
-        path: convertPath(path),
-        originalPath: path,
-        method,
-        xDb: operation["x-db"],
-        parameters: mergeParameters(pathParams, operation.parameters ?? []),
-      });
+      const mergedParams = mergeParameters(pathParams, operation.parameters ?? []);
+      routes.push(compileRoute(path, method, operation["x-db"], mergedParams));
     }
   }
 
   return routes;
-}
-
-/**
- * Convert OpenAPI path parameters to Express style.
- * /users/{userId}/posts/{postId} => /users/:userId/posts/:postId
- */
-export function convertPath(openApiPath: string): string {
-  return openApiPath.replace(/\{([^}]+)\}/g, ":$1");
 }
 
 /**

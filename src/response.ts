@@ -1,46 +1,28 @@
-import type { Pool, QueryResult } from "pg";
-import type { XDbResponse } from "../types.js";
-
-export interface ExecuteOptions {
-  sql: string;
-  values: unknown[];
-  response?: XDbResponse | undefined;
-}
+import type { XDbResponse } from "./types.js";
 
 /**
- * Execute a parameterized query and shape the response.
- */
-export async function executeQuery(
-  pool: Pool,
-  options: ExecuteOptions
-): Promise<unknown> {
-  const result = await pool.query(options.sql, options.values);
-  return shapeResponse(result, options.response);
-}
-
-/**
- * Shape the query result according to response configuration.
+ * Shape query result rows according to response configuration.
  */
 export function shapeResponse(
-  result: QueryResult,
-  response?: XDbResponse
+  rows: Record<string, unknown>[],
+  config?: XDbResponse
 ): unknown {
-  const rows = applyFieldMapping(result.rows, response?.fields);
-  const type = response?.type ?? "array";
+  const mapped = applyFieldMapping(rows, config?.fields);
+  const type = config?.type ?? "array";
 
   switch (type) {
     case "array":
-      return rows;
+      return mapped;
     case "first":
-      return rows[0] ?? null;
+      return mapped[0] ?? null;
     case "value": {
-      if (rows.length === 0) return null;
-      const firstRow = rows[0]!;
+      if (mapped.length === 0) return null;
+      const firstRow = mapped[0]!;
       const keys = Object.keys(firstRow);
       return keys.length > 0 ? firstRow[keys[0]!] : null;
     }
     default:
-      return rows;
+      return mapped;
   }
 }
 

@@ -1,23 +1,29 @@
-// Framework adapters
-export { openApiDb } from "./frameworks/express.js";
+// Main entry point
+export { createRouter } from "./router.js";
 
-// Core utilities
-export { parseSpec } from "./parser.js";
-export { parseTemplate } from "./template.js";
-export { validateRoutes } from "./validation.js";
-
-// Database adapters
-export { executeQuery, shapeResponse, applyFieldMapping } from "./adapters/postgres.js";
+// Error class
+export { OpenApiDbError } from "./errors.js";
+export type { ErrorCode } from "./errors.js";
 
 // Types
 export type {
-  OpenApiDbOptions,
+  RouterOptions,
+  Router,
+  RouterResponse,
+  CompiledRoute,
+  RouteMatch,
   XDbExtension,
   XDbResponse,
-  ParsedRoute,
   ParsedQuery,
   InterpolationContext,
   AuthResolver,
   OpenApiSpec,
   OpenApiParameter,
 } from "./types.js";
+
+// Internal utilities (for advanced use cases)
+export { parseSpec } from "./parser.js";
+export { parseTemplate } from "./template.js";
+export { matchRoute, compileRoute } from "./matcher.js";
+export { shapeResponse, applyFieldMapping } from "./response.js";
+export { executeQuery } from "./executor.js";
