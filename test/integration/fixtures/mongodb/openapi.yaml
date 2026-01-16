@@ -1,0 +1,149 @@
+openapi: "3.0.3"
+info:
+  title: MongoDB Integration Test API
+  version: "1.0.0"
+
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: find
+          filter:
+            tenant_id: ${{ auth.tenantId }}
+            status: ${{ default(query.status, 'active') }}
+          options:
+            sort:
+              first_name: 1
+        response:
+          fields:
+            id: _id
+            firstName: first_name
+            lastName: last_name
+
+    post:
+      summary: Create user
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: insertOne
+          document:
+            _id: ${{ uuid() }}
+            first_name: ${{ body.firstName }}
+            last_name: ${{ body.lastName }}
+            tenant_id: ${{ auth.tenantId }}
+            status: active
+        response:
+          type: first
+          fields:
+            id: _id
+            firstName: first_name
+            lastName: last_name
+
+  /users/count:
+    get:
+      summary: Get user count
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: count
+          filter:
+            tenant_id: ${{ auth.tenantId }}
+        response:
+          type: first
+
+  /users/stats:
+    get:
+      summary: Get user stats by status using aggregation
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          pipeline:
+            - $match:
+                tenant_id: ${{ auth.tenantId }}
+            - $group:
+                _id: "$status"
+                count:
+                  $sum: 1
+            - $project:
+                status: "$_id"
+                count: 1
+                _id: 0
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: findOne
+          filter:
+            _id: ${{ path.id }}
+            tenant_id: ${{ auth.tenantId }}
+        response:
+          type: first
+          fields:
+            id: _id
+            firstName: first_name
+            lastName: last_name
+
+    delete:
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: findOneAndDelete
+          filter:
+            _id: ${{ path.id }}
+            tenant_id: ${{ auth.tenantId }}
+        response:
+          type: first
+          fields:
+            id: _id
+
+  /users/{id}/status:
+    patch:
+      summary: Update user status
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        adapter: mongo
+        query:
+          collection: users
+          operation: findOneAndUpdate
+          filter:
+            _id: ${{ path.id }}
+            tenant_id: ${{ auth.tenantId }}
+          update:
+            $set:
+              status: ${{ body.status }}
+        response:
+          type: first
+          fields:
+            id: _id
+            firstName: first_name
+            lastName: last_name
+            status: status
