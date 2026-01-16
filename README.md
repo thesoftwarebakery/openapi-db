@@ -68,13 +68,14 @@ Typed error class thrown for various error conditions. Catch this to format erro
 
 ```typescript
 class OpenApiDbError extends Error {
-  code: string;      // Error code (see below)
-  status: number;    // HTTP status code
+  code: string; // Error code (see below)
+  status: number; // HTTP status code
   details?: unknown; // Additional error details
 }
 ```
 
 **Error codes:**
+
 - `VALIDATION_ERROR` - Boot-time validation failed
 - `AUTH_RESOLVER_MISSING` - Route uses `$auth` but no auth resolver provided
 - `AUTH_REQUIRED` - Auth resolver returned null
@@ -114,11 +115,11 @@ x-db:
 
 ### Response Types
 
-| Type | Description | No rows returns |
-|------|-------------|-----------------|
-| `array` (default) | Return all rows as an array | `[]` |
-| `first` | Return first row as object | Throws `NOT_FOUND` error |
-| `value` | Return first column of first row | `null` |
+| Type              | Description                      | No rows returns          |
+| ----------------- | -------------------------------- | ------------------------ |
+| `array` (default) | Return all rows as an array      | `[]`                     |
+| `first`           | Return first row as object       | Throws `NOT_FOUND` error |
+| `value`           | Return first column of first row | `null`                   |
 
 ### Field Mapping
 
@@ -141,14 +142,14 @@ Variables in SQL queries are replaced with parameterized placeholders (`$1`, `$2
 
 ### Variable Sources
 
-| Syntax | Description | Example |
-|--------|-------------|---------|
-| `$path.name` | URL path parameters | `/users/{id}` → `$path.id` |
-| `$query.name` | Query string parameters | `?status=active` → `$query.status` |
-| `$body.field` | Request body fields | `{ "name": "Alice" }` → `$body.name` |
-| `$body.nested.path` | Nested body fields | `{ "user": { "name": "Alice" } }` → `$body.user.name` |
-| `$body` | Entire request body | For JSONB columns |
-| `$auth.field` | Auth resolver return value | `$auth.tenantId` |
+| Syntax              | Description                | Example                                               |
+| ------------------- | -------------------------- | ----------------------------------------------------- |
+| `$path.name`        | URL path parameters        | `/users/{id}` → `$path.id`                            |
+| `$query.name`       | Query string parameters    | `?status=active` → `$query.status`                    |
+| `$body.field`       | Request body fields        | `{ "name": "Alice" }` → `$body.name`                  |
+| `$body.nested.path` | Nested body fields         | `{ "user": { "name": "Alice" } }` → `$body.user.name` |
+| `$body`             | Entire request body        | For JSONB columns                                     |
+| `$auth.field`       | Auth resolver return value | `$auth.tenantId`                                      |
 
 ### Example
 
@@ -173,11 +174,11 @@ paths:
 
 Helper functions for common operations:
 
-| Function | Description | Example |
-|----------|-------------|---------|
+| Function                     | Description                                 | Example                       |
+| ---------------------------- | ------------------------------------------- | ----------------------------- |
 | `$.default(value, fallback)` | Returns fallback if value is null/undefined | `$.default($query.limit, 20)` |
-| `$.now()` | Current timestamp | `$.now()` |
-| `$.uuid()` | Generate UUID v4 | `$.uuid()` |
+| `$.now()`                    | Current timestamp                           | `$.now()`                     |
+| `$.uuid()`                   | Generate UUID v4                            | `$.uuid()`                    |
 
 Functions can be nested:
 
@@ -211,31 +212,33 @@ const router = await createRouter({
   },
 });
 
-http.createServer(async (req, res) => {
-  try {
-    const response = await router.handle(req);
+http
+  .createServer(async (req, res) => {
+    try {
+      const response = await router.handle(req);
 
-    if (!response) {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Not found" }));
-      return;
-    }
+      if (!response) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Not found" }));
+        return;
+      }
 
-    res.writeHead(response.status, {
-      "Content-Type": "application/json",
-      ...response.headers,
-    });
-    res.end(JSON.stringify(response.body));
-  } catch (err) {
-    if (err instanceof OpenApiDbError) {
-      res.writeHead(err.status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.code, message: err.message }));
-    } else {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Internal server error" }));
+      res.writeHead(response.status, {
+        "Content-Type": "application/json",
+        ...response.headers,
+      });
+      res.end(JSON.stringify(response.body));
+    } catch (err) {
+      if (err instanceof OpenApiDbError) {
+        res.writeHead(err.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.code, message: err.message }));
+      } else {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
     }
-  }
-}).listen(3000);
+  })
+  .listen(3000);
 ```
 
 ### Express
@@ -447,6 +450,30 @@ When `createRouter()` is called, the library validates:
 
 1. **Auth usage** - If any query uses `$auth.*` but no `auth` option is provided, an error is thrown
 2. **Spec parsing** - Invalid YAML/JSON specs throw `SPEC_PARSE_ERROR`
+
+## Security Warning
+
+**Never publish or expose your OpenAPI spec when using openapi-db.**
+
+Unlike standard OpenAPI specs which describe your API contract,
+specs with `x-db` extensions contain implementation details:
+
+- Database table and column names
+- SQL queries and access patterns
+- Authorization logic
+- Internal business rules
+
+Treat your spec file like source code, not documentation.
+
+### Recommendations
+
+1. **Separate specs** - Keep a public OpenAPI spec for documentation
+   and a private one with `x-db` extensions for your server
+2. **Git ignore patterns** - Consider naming convention like
+   `*.internal.yaml` and gitignoring if the repo is public
+3. **Disable Swagger UI** - Don't serve the raw spec from your API
+4. **Strip x-db in CI** - If you generate client SDKs, strip
+   extensions first
 
 ## License
 
