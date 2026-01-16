@@ -6,7 +6,7 @@ import request from "supertest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRouter, OpenApiDbError, type Router } from "../../src/index.js";
+import { createRouter, OpenApiDbError, PgAdapter, type Router } from "../../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, "fixtures");
@@ -36,7 +36,9 @@ describe("createRouter integration", () => {
     // Create router
     router = await createRouter({
       spec: specPath,
-      db: pool,
+      adapters: {
+        postgres: new PgAdapter(pool),
+      },
       auth: async () => ({ tenantId: "tenant-1" }),
     });
 

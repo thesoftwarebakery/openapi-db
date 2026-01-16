@@ -15,50 +15,50 @@ describe("tokenize", () => {
     expect(tokens).toEqual([{ type: "TEXT", value: "SELECT * FROM users" }]);
   });
 
-  it("parses $path variable", () => {
-    const tokens = tokenize("WHERE id = $path.id");
+  it("parses path variable", () => {
+    const tokens = tokenize("WHERE id = ${{ path.id }}");
     expect(tokens).toHaveLength(2);
     expect(tokens[0]).toEqual({ type: "TEXT", value: "WHERE id = " });
     expect(tokens[1]).toEqual({ type: "VARIABLE", source: "path", path: ["id"] });
   });
 
-  it("parses $query variable", () => {
-    const tokens = tokenize("$query.status");
+  it("parses query variable", () => {
+    const tokens = tokenize("${{ query.status }}");
     expect(tokens).toEqual([{ type: "VARIABLE", source: "query", path: ["status"] }]);
   });
 
-  it("parses $auth variable", () => {
-    const tokens = tokenize("$auth.tenantId");
+  it("parses auth variable", () => {
+    const tokens = tokenize("${{ auth.tenantId }}");
     expect(tokens).toEqual([{ type: "VARIABLE", source: "auth", path: ["tenantId"] }]);
   });
 
-  it("parses nested $body path", () => {
-    const tokens = tokenize("$body.user.profile.name");
+  it("parses nested body path", () => {
+    const tokens = tokenize("${{ body.user.profile.name }}");
     expect(tokens).toEqual([
       { type: "VARIABLE", source: "body", path: ["user", "profile", "name"] },
     ]);
   });
 
-  it("parses $body without path", () => {
-    const tokens = tokenize("VALUES ($body)");
+  it("parses body without path", () => {
+    const tokens = tokenize("VALUES (${{ body }})");
     expect(tokens).toHaveLength(3);
     expect(tokens[0]).toEqual({ type: "TEXT", value: "VALUES (" });
     expect(tokens[1]).toEqual({ type: "VARIABLE", source: "body", path: [] });
     expect(tokens[2]).toEqual({ type: "TEXT", value: ")" });
   });
 
-  it("parses $.now() function", () => {
-    const tokens = tokenize("$.now()");
+  it("parses now() function", () => {
+    const tokens = tokenize("${{ now() }}");
     expect(tokens).toEqual([{ type: "FUNCTION", name: "now", args: [] }]);
   });
 
-  it("parses $.uuid() function", () => {
-    const tokens = tokenize("$.uuid()");
+  it("parses uuid() function", () => {
+    const tokens = tokenize("${{ uuid() }}");
     expect(tokens).toEqual([{ type: "FUNCTION", name: "uuid", args: [] }]);
   });
 
-  it("parses $.default with string literal", () => {
-    const tokens = tokenize("$.default($query.status, 'active')");
+  it("parses default with string literal", () => {
+    const tokens = tokenize("${{ default(query.status, 'active') }}");
     expect(tokens).toHaveLength(1);
     expect(tokens[0]).toMatchObject({ type: "FUNCTION", name: "default" });
     const fn = tokens[0] as { type: "FUNCTION"; name: string; args: unknown[][] };
@@ -66,12 +66,22 @@ describe("tokenize", () => {
   });
 
   it("parses multiple variables in one template", () => {
-    const tokens = tokenize("WHERE a = $path.a AND b = $query.b");
+    const tokens = tokenize("WHERE a = ${{ path.a }} AND b = ${{ query.b }}");
     expect(tokens).toHaveLength(4);
     expect(tokens[0]).toEqual({ type: "TEXT", value: "WHERE a = " });
     expect(tokens[1]).toEqual({ type: "VARIABLE", source: "path", path: ["a"] });
     expect(tokens[2]).toEqual({ type: "TEXT", value: " AND b = " });
     expect(tokens[3]).toEqual({ type: "VARIABLE", source: "query", path: ["b"] });
+  });
+
+  it("handles whitespace inside delimiters", () => {
+    const tokens = tokenize("${{  path.id  }}");
+    expect(tokens).toEqual([{ type: "VARIABLE", source: "path", path: ["id"] }]);
+  });
+
+  it("handles no whitespace inside delimiters", () => {
+    const tokens = tokenize("${{path.id}}");
+    expect(tokens).toEqual([{ type: "VARIABLE", source: "path", path: ["id"] }]);
   });
 });
 
@@ -130,7 +140,7 @@ describe("parseTemplate", () => {
       ...emptyContext,
       path: { id: "123" },
     };
-    const result = parseTemplate("SELECT * FROM users WHERE id = $path.id", context);
+    const result = parseTemplate("SELECT * FROM users WHERE id = ${{ path.id }}", context);
     expect(result.sql).toBe("SELECT * FROM users WHERE id = $1");
     expect(result.values).toEqual(["123"]);
   });
@@ -141,7 +151,7 @@ describe("parseTemplate", () => {
       path: { a: "1" },
       query: { b: "2" },
     };
-    const result = parseTemplate("WHERE a = $path.a AND b = $query.b", context);
+    const result = parseTemplate("WHERE a = ${{ path.a }} AND b = ${{ query.b }}", context);
     expect(result.sql).toBe("WHERE a = $1 AND b = $2");
     expect(result.values).toEqual(["1", "2"]);
   });
@@ -151,30 +161,30 @@ describe("parseTemplate", () => {
       ...emptyContext,
       body: { user: { name: "Alice" } },
     };
-    const result = parseTemplate("INSERT INTO t (name) VALUES ($body.user.name)", context);
+    const result = parseTemplate("INSERT INTO t (name) VALUES (${{ body.user.name }})", context);
     expect(result.sql).toBe("INSERT INTO t (name) VALUES ($1)");
     expect(result.values).toEqual(["Alice"]);
   });
 
-  it("evaluates $.default with present value", () => {
+  it("evaluates default with present value", () => {
     const context: InterpolationContext = {
       ...emptyContext,
       query: { status: "pending" },
     };
-    const result = parseTemplate("WHERE status = $.default($query.status, 'active')", context);
+    const result = parseTemplate("WHERE status = ${{ default(query.status, 'active') }}", context);
     expect(result.sql).toBe("WHERE status = $1");
     expect(result.values).toEqual(["pending"]);
   });
 
-  it("evaluates $.default with missing value uses fallback", () => {
-    const result = parseTemplate("WHERE status = $.default($query.status, 'active')", emptyContext);
+  it("evaluates default with missing value uses fallback", () => {
+    const result = parseTemplate("WHERE status = ${{ default(query.status, 'active') }}", emptyContext);
     expect(result.sql).toBe("WHERE status = $1");
     expect(result.values).toEqual(["active"]);
   });
 
-  it("evaluates $.now() to a Date", () => {
+  it("evaluates now() to a Date", () => {
     const before = new Date();
-    const result = parseTemplate("INSERT INTO t (created) VALUES ($.now())", emptyContext);
+    const result = parseTemplate("INSERT INTO t (created) VALUES (${{ now() }})", emptyContext);
     const after = new Date();
 
     expect(result.sql).toBe("INSERT INTO t (created) VALUES ($1)");
@@ -186,8 +196,8 @@ describe("parseTemplate", () => {
     expect(date.getTime()).toBeLessThanOrEqual(after.getTime());
   });
 
-  it("evaluates $.uuid() to valid UUID", () => {
-    const result = parseTemplate("INSERT INTO t (id) VALUES ($.uuid())", emptyContext);
+  it("evaluates uuid() to valid UUID", () => {
+    const result = parseTemplate("INSERT INTO t (id) VALUES (${{ uuid() }})", emptyContext);
     expect(result.sql).toBe("INSERT INTO t (id) VALUES ($1)");
     expect(result.values).toHaveLength(1);
     expect(result.values[0]).toMatch(
@@ -201,10 +211,9 @@ describe("parseTemplate", () => {
       body: { firstName: "Alice", lastName: "Smith" },
       auth: { tenantId: "t123" },
     };
-    const template = `
-      INSERT INTO users (id, first_name, last_name, tenant_id, created_at)
-      VALUES ($.uuid(), $body.firstName, $body.lastName, $auth.tenantId, $.now())
-    `;
+    const template =
+      "INSERT INTO users (id, first_name, last_name, tenant_id, created_at) " +
+      "VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ auth.tenantId }}, ${{ now() }})";
     const result = parseTemplate(template, context);
 
     expect(result.sql).toContain("VALUES ($1, $2, $3, $4, $5)");
@@ -221,8 +230,20 @@ describe("parseTemplate", () => {
       ...emptyContext,
       query: { ids: "1,2,3" },
     };
-    const result = parseTemplate("WHERE id = ANY($query.ids)", context);
+    const result = parseTemplate("WHERE id = ANY(${{ query.ids }})", context);
     expect(result.sql).toBe("WHERE id = ANY($1)");
     expect(result.values).toEqual([["1", "2", "3"]]);
+  });
+
+  it("handles nested default with number fallback", () => {
+    const result = parseTemplate("LIMIT ${{ default(query.limit, 20) }}", emptyContext);
+    expect(result.sql).toBe("LIMIT $1");
+    expect(result.values).toEqual([20]);
+  });
+
+  it("preserves dollar signs not part of expressions", () => {
+    const result = parseTemplate("SELECT '$100' as price", emptyContext);
+    expect(result.sql).toBe("SELECT '$100' as price");
+    expect(result.values).toEqual([]);
   });
 });

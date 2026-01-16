@@ -24,8 +24,10 @@ export function compileRoute(
     return "([^/]+)";
   });
 
-  // Check if the query uses $auth.* variables
-  const usesAuth = /\$auth\.\w+/.test(xDb.query);
+  // Check if the query uses ${{ auth.* }} variables
+  // For string queries (SQL), check directly; for object queries (NoSQL), check JSON
+  const queryStr = typeof xDb.query === "string" ? xDb.query : JSON.stringify(xDb.query);
+  const usesAuth = /\$\{\{\s*auth\./.test(queryStr);
 
   return {
     method,

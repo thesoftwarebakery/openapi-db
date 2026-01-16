@@ -10,6 +10,9 @@ type Token =
   | { type: "FUNCTION"; name: string; args: Token[][] }
   | { type: "LITERAL"; value: string | number | null };
 
+const OPEN_DELIM = "${{";
+const CLOSE_DELIM = "}}";
+
 /**
  * Parse a SQL template with variable placeholders and functions,
  * returning a parameterized query safe from SQL injection.
@@ -40,205 +43,63 @@ export function parseTemplate(
 
 /**
  * Tokenize a template string into TEXT, VARIABLE, FUNCTION, and LITERAL tokens.
+ * Expressions use ${{ }} delimiters: ${{ path.id }}, ${{ default(query.status, 'active') }}
  */
 export function tokenize(template: string): Token[] {
   const tokens: Token[] = [];
   let pos = 0;
 
   while (pos < template.length) {
-    const dollarPos = template.indexOf("$", pos);
+    const openPos = template.indexOf(OPEN_DELIM, pos);
 
-    if (dollarPos === -1) {
-      // No more $ - rest is text
-      tokens.push({ type: "TEXT", value: template.slice(pos) });
+    if (openPos === -1) {
+      // No more expressions - rest is text
+      if (pos < template.length) {
+        tokens.push({ type: "TEXT", value: template.slice(pos) });
+      }
       break;
     }
 
-    // Add text before $
-    if (dollarPos > pos) {
-      tokens.push({ type: "TEXT", value: template.slice(pos, dollarPos) });
+    // Add text before ${{
+    if (openPos > pos) {
+      tokens.push({ type: "TEXT", value: template.slice(pos, openPos) });
     }
 
-    // Parse what comes after $
-    const result = parseExpression(template, dollarPos);
-    tokens.push(result.token);
-    pos = result.end;
+    // Find closing }}
+    const closePos = findClosingDelimiter(template, openPos + OPEN_DELIM.length);
+    if (closePos === -1) {
+      // No closing delimiter - treat rest as text
+      tokens.push({ type: "TEXT", value: template.slice(openPos) });
+      break;
+    }
+
+    // Extract expression inside ${{ }}
+    const expr = template.slice(openPos + OPEN_DELIM.length, closePos).trim();
+    const token = parseExpression(expr);
+    tokens.push(token);
+
+    pos = closePos + CLOSE_DELIM.length;
   }
 
   return tokens;
 }
 
 /**
- * Parse an expression starting at $ (variable or function).
+ * Find the closing }} delimiter, handling nested braces in string literals.
  */
-function parseExpression(
-  template: string,
-  start: number
-): { token: Token; end: number } {
-  // Check if it's a function ($.name) or variable ($source.path)
-  const afterDollar = template.slice(start + 1);
-
-  if (afterDollar.startsWith(".")) {
-    // Function: $.name(args)
-    return parseFunction(template, start);
-  }
-
-  // Variable: $source.path
-  return parseVariable(template, start);
-}
-
-/**
- * Parse a variable like $path.id or $body.user.name
- */
-function parseVariable(
-  template: string,
-  start: number
-): { token: Token; end: number } {
-  const sources: VariableSource[] = ["path", "query", "body", "auth"];
-  const afterDollar = template.slice(start + 1);
-
-  for (const source of sources) {
-    if (afterDollar.startsWith(source)) {
-      const sourceEnd = start + 1 + source.length;
-
-      // Check for dot after source
-      if (template[sourceEnd] === ".") {
-        // Parse the path segments
-        const pathResult = parsePath(template, sourceEnd + 1);
-        return {
-          token: {
-            type: "VARIABLE",
-            source,
-            path: pathResult.segments,
-          },
-          end: pathResult.end,
-        };
-      }
-
-      // Just $body with no path (entire body)
-      if (source === "body") {
-        return {
-          token: { type: "VARIABLE", source: "body", path: [] },
-          end: sourceEnd,
-        };
-      }
-    }
-  }
-
-  // Unknown $ expression - treat as text
-  return {
-    token: { type: "TEXT", value: "$" },
-    end: start + 1,
-  };
-}
-
-/**
- * Parse dot-separated path segments like "user.name.first"
- */
-function parsePath(
-  template: string,
-  start: number
-): { segments: string[]; end: number } {
-  const segments: string[] = [];
+function findClosingDelimiter(template: string, start: number): number {
   let pos = start;
-
-  while (pos < template.length) {
-    const segment = parseIdentifier(template, pos);
-    if (!segment.value) break;
-
-    segments.push(segment.value);
-    pos = segment.end;
-
-    // Check for more segments
-    if (template[pos] === ".") {
-      pos++;
-    } else {
-      break;
-    }
-  }
-
-  return { segments, end: pos };
-}
-
-/**
- * Parse an identifier (alphanumeric + underscore)
- */
-function parseIdentifier(
-  template: string,
-  start: number
-): { value: string; end: number } {
-  let end = start;
-  while (end < template.length && /[\w]/.test(template[end]!)) {
-    end++;
-  }
-  return { value: template.slice(start, end), end };
-}
-
-/**
- * Parse a function like $.default(arg1, arg2) or $.now()
- */
-function parseFunction(
-  template: string,
-  start: number
-): { token: Token; end: number } {
-  // Skip "$."
-  let pos = start + 2;
-
-  // Parse function name
-  const nameResult = parseIdentifier(template, pos);
-  const name = nameResult.value;
-  pos = nameResult.end;
-
-  // Expect opening parenthesis
-  if (template[pos] !== "(") {
-    return {
-      token: { type: "TEXT", value: template.slice(start, pos) },
-      end: pos,
-    };
-  }
-  pos++; // Skip "("
-
-  // Parse arguments
-  const args: Token[][] = [];
-  let currentArg: Token[] = [];
-
   let depth = 1;
-  let argStart = pos;
 
   while (pos < template.length && depth > 0) {
-    const char = template[pos];
-
-    if (char === "(") {
-      depth++;
-      pos++;
-    } else if (char === ")") {
+    if (template.slice(pos, pos + 2) === "}}") {
       depth--;
-      if (depth === 0) {
-        // End of function - finalize current argument
-        if (pos > argStart || currentArg.length > 0) {
-          const argText = template.slice(argStart, pos).trim();
-          if (argText || currentArg.length > 0) {
-            if (currentArg.length === 0 && argText) {
-              currentArg = tokenizeArgument(argText);
-            }
-            args.push(currentArg);
-          }
-        }
-        pos++; // Skip ")"
-      } else {
-        pos++;
-      }
-    } else if (char === "," && depth === 1) {
-      // Argument separator at top level
-      const argText = template.slice(argStart, pos).trim();
-      if (argText) {
-        currentArg = tokenizeArgument(argText);
-      }
-      args.push(currentArg);
-      currentArg = [];
-      pos++;
-      argStart = pos;
-    } else if (char === "'") {
+      if (depth === 0) return pos;
+      pos += 2;
+    } else if (template.slice(pos, pos + 2) === "{{") {
+      depth++;
+      pos += 2;
+    } else if (template[pos] === "'") {
       // Skip string literal
       pos++;
       while (pos < template.length && template[pos] !== "'") {
@@ -254,14 +115,109 @@ function parseFunction(
     }
   }
 
-  return {
-    token: { type: "FUNCTION", name, args },
-    end: pos,
-  };
+  return -1;
 }
 
 /**
- * Tokenize a single function argument
+ * Parse an expression inside ${{ }}.
+ * Can be a variable (path.id) or function (default(query.status, 'active'))
+ */
+function parseExpression(expr: string): Token {
+  const trimmed = expr.trim();
+
+  // Check if it's a function call: name(...)
+  const parenPos = trimmed.indexOf("(");
+  if (parenPos !== -1 && trimmed.endsWith(")")) {
+    const name = trimmed.slice(0, parenPos).trim();
+    const argsStr = trimmed.slice(parenPos + 1, -1);
+    const args = parseArguments(argsStr);
+    return { type: "FUNCTION", name, args };
+  }
+
+  // Otherwise it's a variable: source.path or just source
+  return parseVariable(trimmed);
+}
+
+/**
+ * Parse a variable expression like "path.id" or "body.user.name" or "body"
+ */
+function parseVariable(expr: string): Token {
+  const sources: VariableSource[] = ["path", "query", "body", "auth"];
+  const parts = expr.split(".");
+  const source = parts[0] as VariableSource;
+
+  if (!sources.includes(source)) {
+    // Unknown source - return as text (will cause issues at runtime)
+    return { type: "TEXT", value: expr };
+  }
+
+  const path = parts.slice(1);
+
+  // body without path is valid (entire body)
+  if (source !== "body" && path.length === 0) {
+    return { type: "TEXT", value: expr };
+  }
+
+  return { type: "VARIABLE", source, path };
+}
+
+/**
+ * Parse function arguments, handling nested expressions and string literals.
+ */
+function parseArguments(argsStr: string): Token[][] {
+  const args: Token[][] = [];
+  if (!argsStr.trim()) return args;
+
+  let pos = 0;
+  let argStart = 0;
+  let depth = 0;
+  let inString = false;
+
+  while (pos <= argsStr.length) {
+    const char = argsStr[pos];
+
+    if (inString) {
+      if (char === "'" && argsStr[pos - 1] !== "\\") {
+        inString = false;
+      }
+      pos++;
+      continue;
+    }
+
+    if (char === "'") {
+      inString = true;
+      pos++;
+      continue;
+    }
+
+    if (char === "(") {
+      depth++;
+      pos++;
+      continue;
+    }
+
+    if (char === ")") {
+      depth--;
+      pos++;
+      continue;
+    }
+
+    if ((char === "," && depth === 0) || pos === argsStr.length) {
+      const argText = argsStr.slice(argStart, pos).trim();
+      if (argText) {
+        args.push(tokenizeArgument(argText));
+      }
+      argStart = pos + 1;
+    }
+
+    pos++;
+  }
+
+  return args;
+}
+
+/**
+ * Tokenize a single function argument.
  */
 function tokenizeArgument(arg: string): Token[] {
   const trimmed = arg.trim();
@@ -282,17 +238,13 @@ function tokenizeArgument(arg: string): Token[] {
     return [{ type: "LITERAL", value: null }];
   }
 
-  // Variable or function - parse recursively
-  if (trimmed.startsWith("$")) {
-    return tokenize(trimmed);
-  }
-
-  // Unknown - treat as text
-  return [{ type: "TEXT", value: trimmed }];
+  // Variable or nested function - parse as expression
+  const token = parseExpression(trimmed);
+  return [token];
 }
 
 /**
- * Evaluate a token to its runtime value
+ * Evaluate a token to its runtime value.
  */
 export function evaluateToken(
   token: Token,
@@ -314,7 +266,7 @@ export function evaluateToken(
 }
 
 /**
- * Evaluate a variable reference
+ * Evaluate a variable reference.
  */
 function evaluateVariable(
   source: VariableSource,
@@ -355,7 +307,7 @@ function evaluateVariable(
 }
 
 /**
- * Evaluate a function call
+ * Evaluate a function call.
  */
 function evaluateFunction(
   name: string,
@@ -381,6 +333,6 @@ function evaluateFunction(
       return randomUUID();
 
     default:
-      throw new OpenApiDbError("UNKNOWN_FUNCTION", `Unknown function: $.${name}`);
+      throw new OpenApiDbError("UNKNOWN_FUNCTION", `Unknown function: ${name}()`);
   }
 }

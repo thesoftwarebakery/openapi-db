@@ -12,20 +12,26 @@ A lightweight, framework-agnostic library that serves REST API endpoints directl
 ## Installation
 
 ```bash
-npm install openapi-db pg yaml
+npm install openapi-db yaml
+
+# Install database adapter(s) you need
+npm install pg          # PostgreSQL
+npm install mongodb     # MongoDB
 ```
 
 ## Quick Start
 
 ```typescript
-import { createRouter } from "openapi-db";
+import { createRouter, PgAdapter } from "openapi-db";
 import { Pool } from "pg";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const router = await createRouter({
   spec: "./openapi.yaml",
-  db: pool,
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
 });
 
 // router.handle(req) returns { status, headers, body } or null
@@ -42,10 +48,11 @@ interface RouterOptions {
   // Path to OpenAPI spec file (YAML/JSON), or pre-parsed object
   spec: string | OpenAPIDocument;
 
-  // Postgres connection pool
-  db: Pool;
+  // Database adapters keyed by name
+  // Routes reference adapters via x-db.adapter field
+  adapters: Record<string, Adapter>;
 
-  // Optional auth resolver - called for routes that use $auth.*
+  // Optional auth resolver - called for routes that use ${{ auth.* }}
   auth?: (req: IncomingMessage) => Promise<Record<string, unknown> | null>;
 }
 ```
@@ -77,11 +84,85 @@ class OpenApiDbError extends Error {
 **Error codes:**
 
 - `VALIDATION_ERROR` - Boot-time validation failed
-- `AUTH_RESOLVER_MISSING` - Route uses `$auth` but no auth resolver provided
+- `AUTH_RESOLVER_MISSING` - Route uses `${{ auth }}` but no auth resolver provided
 - `AUTH_REQUIRED` - Auth resolver returned null
 - `UNKNOWN_FUNCTION` - Unknown function in template
 - `QUERY_ERROR` - Database query failed
 - `NOT_FOUND` - First-type response with no rows
+
+## Adapters
+
+Adapters handle database-specific query interpolation and execution. Each adapter is responsible for:
+
+- Validating query format at boot time
+- Interpolating `${{ }}` variables into database-specific parameterized queries
+- Executing queries and returning rows
+
+### Built-in Adapters
+
+#### `PgAdapter` - PostgreSQL
+
+```typescript
+import { PgAdapter } from "openapi-db";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
+});
+```
+
+Uses `$1, $2, $3` parameterized query style. Requires `pg` package as a peer dependency.
+
+#### `MongoAdapter` - MongoDB
+
+```typescript
+import { MongoAdapter } from "openapi-db";
+import { MongoClient } from "mongodb";
+
+const client = new MongoClient(process.env.MONGODB_URI);
+await client.connect();
+const db = client.db("myapp");
+
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: {
+    mongo: new MongoAdapter(db),
+  },
+});
+```
+
+Supports object-based queries and aggregation pipelines. Requires `mongodb` package as a peer dependency.
+
+**Supported operations:** `find`, `findOne`, `insertOne`, `updateOne`, `replaceOne`, `deleteOne`, `aggregate`, `count`, `findOneAndUpdate`, `findOneAndDelete`, `bulkWrite`
+
+### Multiple Adapters
+
+You can configure multiple adapters (e.g., for read replicas or different databases):
+
+```typescript
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: {
+    primary: new PgAdapter(primaryPool),
+    replica: new PgAdapter(replicaPool),
+  },
+});
+```
+
+Routes specify which adapter to use via `x-db.adapter`:
+
+```yaml
+x-db:
+  adapter: replica
+  query: SELECT * FROM users
+```
+
+If only one adapter is configured, `x-db.adapter` can be omitted.
 
 ## The `x-db` Extension
 
@@ -100,8 +181,12 @@ paths:
 
 ```yaml
 x-db:
-  # SQL query with variable interpolation (required)
-  query: string
+  # Adapter name from adapters config (optional if only one adapter)
+  adapter: string
+
+  # Query with variable interpolation (required)
+  # String for SQL adapters, object for NoSQL adapters
+  query: string | object
 
   # Response shaping (optional)
   response:
@@ -136,20 +221,105 @@ x-db:
 
 Result: `{ "id": 1, "firstName": "Alice", "lastName": "Smith" }`
 
+### MongoDB Query Format
+
+MongoDB queries use an object format instead of SQL strings:
+
+**Standard operations:**
+
+```yaml
+x-db:
+  adapter: mongo
+  query:
+    collection: users
+    operation: find
+    filter:
+      tenant_id: ${{ auth.tenantId }}
+      status: ${{ default(query.status, 'active') }}
+    options:
+      limit: ${{ default(query.limit, 20) }}
+      sort:
+        created_at: -1
+```
+
+**Aggregation pipelines:**
+
+```yaml
+x-db:
+  adapter: mongo
+  query:
+    collection: users
+    pipeline:
+      - $match:
+          tenant_id: ${{ auth.tenantId }}
+      - $project:
+          firstName: "$first_name"
+          lastName: "$last_name"
+      - $limit: ${{ default(query.limit, 20) }}
+```
+
+**Insert operation:**
+
+```yaml
+x-db:
+  adapter: mongo
+  query:
+    collection: users
+    operation: insertOne
+    document:
+      _id: ${{ uuid() }}
+      name: ${{ body.name }}
+      tenant_id: ${{ auth.tenantId }}
+      created_at: ${{ now() }}
+  response:
+    type: first
+```
+
+**Update operation:**
+
+```yaml
+x-db:
+  adapter: mongo
+  query:
+    collection: users
+    operation: updateOne
+    filter:
+      _id: ${{ path.id }}
+      tenant_id: ${{ auth.tenantId }}
+    update:
+      $set:
+        status: ${{ body.status }}
+```
+
+**Delete operation:**
+
+```yaml
+x-db:
+  adapter: mongo
+  query:
+    collection: users
+    operation: deleteOne
+    filter:
+      _id: ${{ path.id }}
+      tenant_id: ${{ auth.tenantId }}
+  response:
+    type: first
+```
+
 ## Variable Interpolation
 
 Variables in SQL queries are replaced with parameterized placeholders (`$1`, `$2`, etc.), preventing SQL injection.
 
 ### Variable Sources
 
-| Syntax              | Description                | Example                                               |
-| ------------------- | -------------------------- | ----------------------------------------------------- |
-| `$path.name`        | URL path parameters        | `/users/{id}` → `$path.id`                            |
-| `$query.name`       | Query string parameters    | `?status=active` → `$query.status`                    |
-| `$body.field`       | Request body fields        | `{ "name": "Alice" }` → `$body.name`                  |
-| `$body.nested.path` | Nested body fields         | `{ "user": { "name": "Alice" } }` → `$body.user.name` |
-| `$body`             | Entire request body        | For JSONB columns                                     |
-| `$auth.field`       | Auth resolver return value | `$auth.tenantId`                                      |
+| Syntax                    | Description                | Example                                                         |
+| ------------------------- | -------------------------- | --------------------------------------------------------------- |
+| `${{ path.name }}`        | URL path parameters        | `/users/{id}` → `${{ path.id }}`                                |
+| `${{ query.name }}`       | Query string parameters    | `?status=active` → `${{ query.status }}`                        |
+| `${{ body.field }}`       | Request body fields        | `{ "name": "Alice" }` → `${{ body.name }}`                      |
+| `${{ body.nested.path }}` | Nested body fields         | `{ "user": { "name": "Alice" } }` → `${{ body.user.name }}`     |
+| `${{ body }}`             | Entire request body        | For JSONB columns                                               |
+| `${{ auth.field }}`       | Auth resolver return value | `${{ auth.tenantId }}`                                          |
 
 ### Example
 
@@ -164,8 +334,8 @@ paths:
       x-db:
         query: |
           SELECT * FROM users
-          WHERE id = $path.id
-            AND tenant_id = $auth.tenantId
+          WHERE id = ${{ path.id }}
+            AND tenant_id = ${{ auth.tenantId }}
         response:
           type: first
 ```
@@ -174,11 +344,11 @@ paths:
 
 Helper functions for common operations:
 
-| Function                     | Description                                 | Example                       |
-| ---------------------------- | ------------------------------------------- | ----------------------------- |
-| `$.default(value, fallback)` | Returns fallback if value is null/undefined | `$.default($query.limit, 20)` |
-| `$.now()`                    | Current timestamp                           | `$.now()`                     |
-| `$.uuid()`                   | Generate UUID v4                            | `$.uuid()`                    |
+| Function                           | Description                                 | Example                             |
+| ---------------------------------- | ------------------------------------------- | ----------------------------------- |
+| `${{ default(value, fallback) }}`  | Returns fallback if value is null/undefined | `${{ default(query.limit, 20) }}`   |
+| `${{ now() }}`                     | Current timestamp                           | `${{ now() }}`                      |
+| `${{ uuid() }}`                    | Generate UUID v4                            | `${{ uuid() }}`                     |
 
 Functions can be nested:
 
@@ -186,8 +356,8 @@ Functions can be nested:
 x-db:
   query: |
     SELECT * FROM users
-    WHERE status = $.default($query.status, 'active')
-    LIMIT $.default($query.limit, 20)
+    WHERE status = ${{ default(query.status, 'active') }}
+    LIMIT ${{ default(query.limit, 20) }}
 ```
 
 ## Usage Examples
@@ -197,13 +367,15 @@ x-db:
 ```typescript
 import http from "http";
 import { Pool } from "pg";
-import { createRouter, OpenApiDbError } from "openapi-db";
+import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const router = await createRouter({
   spec: "./openapi.yaml",
-  db: pool,
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
   auth: async (req) => {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return null;
@@ -246,7 +418,7 @@ http
 ```typescript
 import express from "express";
 import { Pool } from "pg";
-import { createRouter, OpenApiDbError } from "openapi-db";
+import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
 
 const app = express();
 app.use(express.json());
@@ -254,7 +426,9 @@ app.use(express.json());
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const router = await createRouter({
   spec: "./openapi.yaml",
-  db: pool,
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
   auth: async (req) => ({ tenantId: req.headers["x-tenant-id"] }),
 });
 
@@ -284,11 +458,16 @@ app.listen(3000);
 ```typescript
 import Fastify from "fastify";
 import { Pool } from "pg";
-import { createRouter, OpenApiDbError } from "openapi-db";
+import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
 
 const fastify = Fastify();
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const router = await createRouter({ spec: "./openapi.yaml", db: pool });
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
+});
 
 fastify.addHook("onRequest", async (req, reply) => {
   try {
@@ -335,10 +514,10 @@ paths:
         query: |
           SELECT id, first_name, last_name, email, created_at
           FROM users
-          WHERE tenant_id = $auth.tenantId
-            AND status = $.default($query.status, 'active')
+          WHERE tenant_id = ${{ auth.tenantId }}
+            AND status = ${{ default(query.status, 'active') }}
           ORDER BY created_at DESC
-          LIMIT $.default($query.limit, 20)
+          LIMIT ${{ default(query.limit, 20) }}
         response:
           fields:
             firstName: first_name
@@ -363,7 +542,7 @@ paths:
       x-db:
         query: |
           INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
-          VALUES ($.uuid(), $body.firstName, $body.lastName, $body.email, $auth.tenantId, $.now())
+          VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ body.email }}, ${{ auth.tenantId }}, ${{ now() }})
           RETURNING id, first_name, last_name, email, created_at
         response:
           type: first
@@ -386,7 +565,7 @@ paths:
         query: |
           SELECT id, first_name, last_name, email, created_at
           FROM users
-          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
         response:
           type: first
           fields:
@@ -406,7 +585,7 @@ paths:
       x-db:
         query: |
           DELETE FROM users
-          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
           RETURNING id
         response:
           type: first
@@ -416,7 +595,7 @@ paths:
       summary: Get user count
       x-db:
         query: |
-          SELECT COUNT(*)::int FROM users WHERE tenant_id = $auth.tenantId
+          SELECT COUNT(*)::int FROM users WHERE tenant_id = ${{ auth.tenantId }}
         response:
           type: value
 ```
@@ -441,15 +620,17 @@ GET /users?ids=1,2,3
 
 ```yaml
 x-db:
-  query: SELECT * FROM users WHERE id = ANY($query.ids)
+  query: SELECT * FROM users WHERE id = ANY(${{ query.ids }})
 ```
 
 ## Boot-time Validation
 
 When `createRouter()` is called, the library validates:
 
-1. **Auth usage** - If any query uses `$auth.*` but no `auth` option is provided, an error is thrown
-2. **Spec parsing** - Invalid YAML/JSON specs throw `SPEC_PARSE_ERROR`
+1. **Adapter configuration** - If a route specifies `x-db.adapter`, that adapter must be configured
+2. **Query format** - Each adapter validates its query format (e.g., PgAdapter requires string queries)
+3. **Auth usage** - If any query uses `${{ auth.* }}` but no `auth` option is provided, an error is thrown
+4. **Spec parsing** - Invalid YAML/JSON specs throw `SPEC_PARSE_ERROR`
 
 ## Security Warning
 

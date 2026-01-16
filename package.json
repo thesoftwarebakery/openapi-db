@@ -1,7 +1,7 @@
 {
   "name": "openapi-db",
   "version": "1.0.0",
-  "description": "Express middleware that serves REST API endpoints from OpenAPI spec with SQL queries",
+  "description": "Framework-agnostic library that serves REST API endpoints from OpenAPI spec with database queries",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,18 +17,32 @@
   "license": "ISC",
   "packageManager": "pnpm@10.18.3",
   "devDependencies": {
+    "@testcontainers/mongodb": "^11.11.0",
     "@testcontainers/postgresql": "^11.11.0",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.9",
     "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.3",
+    "express": "^5.2.1",
+    "mongodb": "^6.15.0",
+    "pg": "^8.17.1",
     "supertest": "^7.2.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },
+  "peerDependencies": {
+    "mongodb": "^6.0.0",
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    }
+  },
   "dependencies": {
-    "express": "^5.2.1",
-    "pg": "^8.17.1",
     "yaml": "^2.8.2"
   }
 }

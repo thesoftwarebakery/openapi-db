@@ -5,6 +5,14 @@ export { createRouter } from "./router.js";
 export { OpenApiDbError } from "./errors.js";
 export type { ErrorCode } from "./errors.js";
 
+// Adapter types and implementations
+export type { Adapter, Context, InterpolationHelpers } from "./adapters/types.js";
+export { PgAdapter } from "./adapters/postgres/index.js";
+export { MongoAdapter } from "./adapters/mongodb/index.js";
+
+// Helpers (for custom adapter implementations)
+export { createHelpers } from "./helpers.js";
+
 // Types
 export type {
   RouterOptions,
@@ -26,4 +34,3 @@ export { parseSpec } from "./parser.js";
 export { parseTemplate } from "./template.js";
 export { matchRoute, compileRoute } from "./matcher.js";
 export { shapeResponse, applyFieldMapping } from "./response.js";
-export { executeQuery } from "./executor.js";

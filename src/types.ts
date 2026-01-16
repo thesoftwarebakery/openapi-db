@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import type { Pool } from "pg";
+import type { Adapter } from "./adapters/types.js";
 
 /**
  * Configuration options for the router
@@ -8,8 +8,11 @@ export interface RouterOptions {
   /** Path to OpenAPI spec file (YAML/JSON), or pre-parsed spec object */
   spec: string | OpenApiSpec;
 
-  /** Postgres connection pool */
-  db: Pool;
+  /**
+   * Database adapters keyed by name.
+   * Routes reference adapters via x-db.adapter field.
+   */
+  adapters: Record<string, Adapter>;
 
   /** Optional auth resolver - extracts user context from request */
   auth?: AuthResolver;
@@ -39,11 +42,14 @@ export interface RouterResponse {
  * The x-db extension schema for OpenAPI operations
  */
 export interface XDbExtension {
-  /** The SQL query template with variable placeholders */
-  query: string;
+  /** The query template (string for SQL, object for NoSQL) */
+  query: unknown;
 
-  /** Named connection (reserved for future multi-db support) */
-  connection?: string;
+  /**
+   * Adapter name from the adapters config.
+   * Defaults to 'postgres' if omitted.
+   */
+  adapter?: string;
 
   /** Response shaping configuration */
   response?: XDbResponse;

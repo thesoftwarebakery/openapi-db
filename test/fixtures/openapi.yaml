@@ -20,10 +20,10 @@ paths:
         query: |
           SELECT id, first_name, last_name, email, status, created_at
           FROM users
-          WHERE tenant_id = $auth.tenantId
-            AND status = $.default($query.status, 'active')
+          WHERE tenant_id = ${{ auth.tenantId }}
+            AND status = ${{ default(query.status, 'active') }}
           ORDER BY created_at DESC
-          LIMIT $.default($query.limit, 20)
+          LIMIT ${{ default(query.limit, 20) }}
         response:
           fields:
             firstName: first_name
@@ -48,7 +48,7 @@ paths:
       x-db:
         query: |
           INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
-          VALUES ($.uuid(), $body.firstName, $body.lastName, $body.email, $auth.tenantId, $.now())
+          VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ body.email }}, ${{ auth.tenantId }}, ${{ now() }})
           RETURNING id, first_name, last_name, email, created_at
         response:
           type: first
@@ -71,7 +71,7 @@ paths:
         query: |
           SELECT id, first_name, last_name, email, status, created_at
           FROM users
-          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
         response:
           type: first
           fields:
@@ -91,7 +91,7 @@ paths:
       x-db:
         query: |
           DELETE FROM users
-          WHERE id = $path.id AND tenant_id = $auth.tenantId
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
           RETURNING id
         response:
           type: first
@@ -113,7 +113,7 @@ paths:
         query: |
           SELECT id, first_name, last_name
           FROM users
-          WHERE id = ANY($query.ids) AND tenant_id = $auth.tenantId
+          WHERE id = ANY(${{ query.ids }}) AND tenant_id = ${{ auth.tenantId }}
         response:
           fields:
             firstName: first_name
@@ -124,6 +124,6 @@ paths:
       summary: Get total user count
       x-db:
         query: |
-          SELECT COUNT(*)::int as count FROM users WHERE tenant_id = $auth.tenantId
+          SELECT COUNT(*)::int as count FROM users WHERE tenant_id = ${{ auth.tenantId }}
         response:
           type: value

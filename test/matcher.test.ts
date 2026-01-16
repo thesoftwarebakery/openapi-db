@@ -30,8 +30,8 @@ describe("compileRoute", () => {
     expect(route.paramNames).toEqual(["userId", "postId"]);
   });
 
-  it("detects $auth usage", () => {
-    const routeWithAuth = compileRoute("/users", "get", { query: "WHERE tenant = $auth.tenantId" }, []);
+  it("detects ${{ auth }} usage", () => {
+    const routeWithAuth = compileRoute("/users", "get", { query: "WHERE tenant = ${{ auth.tenantId }}" }, []);
     const routeWithoutAuth = compileRoute("/users", "get", { query: "SELECT 1" }, []);
 
     expect(routeWithAuth.usesAuth).toBe(true);
@@ -53,8 +53,8 @@ describe("matchRoute", () => {
     compileRoute("/users", "get", { query: "SELECT * FROM users" }, []),
     compileRoute("/users", "post", { query: "INSERT INTO users" }, []),
     compileRoute("/users/count", "get", { query: "SELECT COUNT(*)" }, []),
-    compileRoute("/users/{id}", "get", { query: "SELECT * FROM users WHERE id = $path.id" }, []),
-    compileRoute("/users/{id}", "delete", { query: "DELETE FROM users WHERE id = $path.id" }, []),
+    compileRoute("/users/{id}", "get", { query: "SELECT * FROM users WHERE id = ${{ path.id }}" }, []),
+    compileRoute("/users/{id}", "delete", { query: "DELETE FROM users WHERE id = ${{ path.id }}" }, []),
   ];
 
   it("matches exact path with correct method", () => {

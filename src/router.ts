@@ -1,19 +1,56 @@
 import type { IncomingMessage } from "node:http";
-import type { Pool } from "pg";
 import type {
   RouterOptions,
   Router,
   RouterResponse,
   CompiledRoute,
-  InterpolationContext,
   OpenApiParameter,
 } from "./types.js";
+import type { Adapter, Context } from "./adapters/types.js";
 import { OpenApiDbError } from "./errors.js";
 import { parseSpec } from "./parser.js";
 import { matchRoute } from "./matcher.js";
-import { parseTemplate } from "./template.js";
-import { executeQuery } from "./executor.js";
+import { createHelpers } from "./helpers.js";
 import { shapeResponse } from "./response.js";
+
+/**
+ * Resolve the adapter name for a route.
+ * If adapter is specified, use it. Otherwise:
+ * - If exactly one adapter is configured, use that
+ * - If multiple adapters are configured, throw an error
+ */
+function resolveAdapterName(
+  explicitAdapter: string | undefined,
+  adapters: Record<string, Adapter>,
+  route: CompiledRoute
+): string {
+  if (explicitAdapter) {
+    if (!adapters[explicitAdapter]) {
+      throw new OpenApiDbError(
+        "VALIDATION_ERROR",
+        "Route " + route.method.toUpperCase() + " " + route.originalPath + " uses adapter '" + explicitAdapter + "' which is not configured"
+      );
+    }
+    return explicitAdapter;
+  }
+
+  const adapterNames = Object.keys(adapters);
+  if (adapterNames.length === 0) {
+    throw new OpenApiDbError(
+      "VALIDATION_ERROR",
+      "No adapters configured"
+    );
+  }
+
+  if (adapterNames.length === 1) {
+    return adapterNames[0]!;
+  }
+
+  throw new OpenApiDbError(
+    "VALIDATION_ERROR",
+    "Route " + route.method.toUpperCase() + " " + route.originalPath + " must specify x-db.adapter when multiple adapters are configured"
+  );
+}
 
 /**
  * Create a router from an OpenAPI spec with x-db extensions.
@@ -21,23 +58,39 @@ import { shapeResponse } from "./response.js";
 export async function createRouter(options: RouterOptions): Promise<Router> {
   const routes = parseSpec(options.spec);
 
-  // Boot-time validation: check $auth usage vs auth option
+  // Boot-time validation
   for (const route of routes) {
+    // Check $auth usage vs auth option
     if (route.usesAuth && !options.auth) {
       throw new OpenApiDbError(
         "VALIDATION_ERROR",
-        `Route ${route.method.toUpperCase()} ${route.originalPath} uses $auth but no auth resolver provided`
+        "Route " + route.method.toUpperCase() + " " + route.originalPath + " uses ${{ auth }} but no auth resolver provided"
+      );
+    }
+
+    // Resolve adapter name
+    const adapterName = resolveAdapterName(route.xDb.adapter, options.adapters, route);
+    const adapter = options.adapters[adapterName]!;
+
+    // Validate query format for this adapter
+    const validation = adapter.validateQuery(route.xDb.query);
+    if (!validation.valid) {
+      throw new OpenApiDbError(
+        "VALIDATION_ERROR",
+        `Route ${route.method.toUpperCase()} ${route.originalPath}: ${validation.error}`
       );
     }
   }
 
-  return new RouterImpl(routes, options.db, options.auth);
+  return new RouterImpl(routes, options.adapters, options.auth);
 }
 
 class RouterImpl implements Router {
+  private helpers = createHelpers();
+
   constructor(
     private routes: CompiledRoute[],
-    private db: Pool,
+    private adapters: Record<string, Adapter>,
     private auth?: RouterOptions["auth"]
   ) {}
 
@@ -57,7 +110,7 @@ class RouterImpl implements Router {
       if (!this.auth) {
         throw new OpenApiDbError(
           "AUTH_RESOLVER_MISSING",
-          "Route uses $auth but no auth resolver provided",
+          "Route uses " + "${{ auth }}" + " but no auth resolver provided",
           500
         );
       }
@@ -72,16 +125,20 @@ class RouterImpl implements Router {
     const query = this.parseQuery(req.url ?? "/", route.parameters);
 
     // Build context
-    const context: InterpolationContext = {
+    const context: Context = {
       path: pathParams,
       query,
       body,
       auth: authContext,
     };
 
-    // Interpolate SQL and execute
-    const { sql, values } = parseTemplate(route.xDb.query, context);
-    const rows = await executeQuery(this.db, sql, values);
+    // Get adapter and execute
+    const adapterName = resolveAdapterName(route.xDb.adapter, this.adapters, route);
+    const adapter = this.adapters[adapterName]!;
+
+    // Interpolate and execute
+    const interpolated = adapter.interpolate(route.xDb.query, context, this.helpers);
+    const rows = await adapter.execute(interpolated);
 
     // Shape response
     const responseBody = shapeResponse(rows, route.xDb.response);
