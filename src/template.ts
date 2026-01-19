@@ -147,15 +147,21 @@ function parseVariable(expr: string): Token {
   const source = parts[0] as VariableSource;
 
   if (!sources.includes(source)) {
-    // Unknown source - return as text (will cause issues at runtime)
-    return { type: "TEXT", value: expr };
+    throw new OpenApiDbError(
+      "INVALID_VARIABLE",
+      `Invalid variable source "${parts[0]}" in expression "$\{{ ${expr} }}". ` +
+        `Valid sources are: ${sources.join(", ")}`
+    );
   }
 
   const path = parts.slice(1);
 
   // body without path is valid (entire body)
   if (source !== "body" && path.length === 0) {
-    return { type: "TEXT", value: expr };
+    throw new OpenApiDbError(
+      "INVALID_VARIABLE",
+      `Variable "$\{{ ${source} }}" requires a property path (e.g., "${source}.id")`
+    );
   }
 
   return { type: "VARIABLE", source, path };

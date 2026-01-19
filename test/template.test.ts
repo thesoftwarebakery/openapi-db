@@ -83,6 +83,17 @@ describe("tokenize", () => {
     const tokens = tokenize("${{path.id}}");
     expect(tokens).toEqual([{ type: "VARIABLE", source: "path", path: ["id"] }]);
   });
+
+  it("throws on invalid variable source", () => {
+    expect(() => tokenize("${{ invalid.id }}")).toThrow("Invalid variable source");
+    expect(() => tokenize("${{ paht.id }}")).toThrow("Invalid variable source");
+  });
+
+  it("throws on path/query/auth without property", () => {
+    expect(() => tokenize("${{ path }}")).toThrow("requires a property path");
+    expect(() => tokenize("${{ query }}")).toThrow("requires a property path");
+    expect(() => tokenize("${{ auth }}")).toThrow("requires a property path");
+  });
 });
 
 describe("evaluateToken", () => {
