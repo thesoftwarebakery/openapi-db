@@ -24,11 +24,10 @@ paths:
             AND status = ${{ default(query.status, 'active') }}
           ORDER BY created_at DESC
           LIMIT ${{ default(query.limit, 20) }}
-        response:
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
 
     post:
       summary: Create user
@@ -50,12 +49,11 @@ paths:
           INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
           VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ body.email }}, ${{ auth.tenantId }}, ${{ now() }})
           RETURNING id, first_name, last_name, email, created_at
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
+        returns: /0
 
   /users/{id}:
     get:
@@ -72,12 +70,11 @@ paths:
           SELECT id, first_name, last_name, email, status, created_at
           FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
+        returns: /0
 
     delete:
       summary: Delete user
@@ -93,8 +90,7 @@ paths:
           DELETE FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
           RETURNING id
-        response:
-          type: first
+        returns: /0
 
   /users/search:
     get:
@@ -114,10 +110,9 @@ paths:
           SELECT id, first_name, last_name
           FROM users
           WHERE id = ANY(${{ query.ids }}) AND tenant_id = ${{ auth.tenantId }}
-        response:
-          fields:
-            firstName: first_name
-            lastName: last_name
+        fields:
+          firstName: first_name
+          lastName: last_name
 
   /stats/user-count:
     get:
@@ -125,5 +120,4 @@ paths:
       x-db:
         query: |
           SELECT COUNT(*)::int as count FROM users WHERE tenant_id = ${{ auth.tenantId }}
-        response:
-          type: value
+        returns: /0/count

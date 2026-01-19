@@ -16,9 +16,7 @@
         "summary": "Create item",
         "x-db": {
           "query": "INSERT INTO items (id, name) VALUES ($.uuid(), $body.name) RETURNING id, name",
-          "response": {
-            "type": "first"
-          }
+          "returns": "/0"
         }
       }
     },
@@ -38,9 +36,7 @@
         ],
         "x-db": {
           "query": "SELECT id, name FROM items WHERE id = $path.id",
-          "response": {
-            "type": "first"
-          }
+          "returns": "/0"
         }
       }
     }

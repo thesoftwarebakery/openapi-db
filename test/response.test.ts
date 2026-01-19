@@ -48,7 +48,7 @@ describe("applyFieldMapping", () => {
 });
 
 describe("shapeResponse", () => {
-  describe("type: array (default)", () => {
+  describe("no config (default - full array)", () => {
     it("returns all rows as array", () => {
       const rows = [{ id: 1 }, { id: 2 }];
       expect(shapeResponse(rows)).toEqual([{ id: 1 }, { id: 2 }]);
@@ -58,56 +58,79 @@ describe("shapeResponse", () => {
       expect(shapeResponse([])).toEqual([]);
     });
 
-    it("is the default when no response config", () => {
+    it("returns rows unchanged when config is undefined", () => {
       const rows = [{ id: 1 }];
-      expect(shapeResponse(rows)).toEqual([{ id: 1 }]);
+      expect(shapeResponse(rows, undefined)).toEqual([{ id: 1 }]);
     });
   });
 
-  describe("type: first", () => {
-    it("returns first row", () => {
+  describe("returns: /0 (first row)", () => {
+    it("returns first row as object", () => {
       const rows = [{ id: 1 }, { id: 2 }];
-      expect(shapeResponse(rows, { type: "first" })).toEqual({ id: 1 });
+      expect(shapeResponse(rows, { returns: "/0" })).toEqual({ id: 1 });
     });
 
     it("returns null when no rows", () => {
-      expect(shapeResponse([], { type: "first" })).toBeNull();
+      expect(shapeResponse([], { returns: "/0" })).toBeNull();
     });
   });
 
-  describe("type: value", () => {
-    it("returns first column of first row", () => {
+  describe("returns: /0/field (scalar extraction)", () => {
+    it("returns scalar value from first row", () => {
       const rows = [{ count: 42 }];
-      expect(shapeResponse(rows, { type: "value" })).toBe(42);
+      expect(shapeResponse(rows, { returns: "/0/count" })).toBe(42);
     });
 
     it("returns null when no rows", () => {
-      expect(shapeResponse([], { type: "value" })).toBeNull();
+      expect(shapeResponse([], { returns: "/0/total" })).toBeNull();
     });
 
-    it("returns first column when multiple columns", () => {
-      // Object key order is guaranteed in modern JS for string keys
-      const rows = [{ a: 1, b: 2, c: 3 }];
-      expect(shapeResponse(rows, { type: "value" })).toBe(1);
+    it("returns null for missing field", () => {
+      const rows = [{ a: 1 }];
+      expect(shapeResponse(rows, { returns: "/0/nonexistent" })).toBeNull();
+    });
+  });
+
+  describe("returns: deeper paths", () => {
+    it("extracts specific row by index", () => {
+      const rows = [{ id: 1 }, { id: 2 }, { id: 3 }];
+      expect(shapeResponse(rows, { returns: "/1" })).toEqual({ id: 2 });
+    });
+
+    it("extracts field from specific row", () => {
+      const rows = [{ name: "Alice" }, { name: "Bob" }];
+      expect(shapeResponse(rows, { returns: "/1/name" })).toBe("Bob");
+    });
+
+    it("returns null for out-of-bounds index", () => {
+      const rows = [{ id: 1 }];
+      expect(shapeResponse(rows, { returns: "/5" })).toBeNull();
     });
   });
 
   describe("with field mapping", () => {
-    it("applies field mapping before shaping", () => {
+    it("applies field mapping before extraction", () => {
       const rows = [{ first_name: "Alice" }];
-      const response = { type: "first" as const, fields: { firstName: "first_name" } };
+      const config = { fields: { firstName: "first_name" }, returns: "/0" };
 
-      expect(shapeResponse(rows, response)).toEqual({ firstName: "Alice" });
+      expect(shapeResponse(rows, config)).toEqual({ firstName: "Alice" });
     });
 
-    it("applies mapping to all rows for array type", () => {
+    it("applies mapping to all rows when returning full array", () => {
       const rows = [{ first_name: "Alice" }, { first_name: "Bob" }];
-      const response = { type: "array" as const, fields: { firstName: "first_name" } };
+      const config = { fields: { firstName: "first_name" } };
 
-      expect(shapeResponse(rows, response)).toEqual([
+      expect(shapeResponse(rows, config)).toEqual([
         { firstName: "Alice" },
         { firstName: "Bob" },
       ]);
+    });
+
+    it("extracts mapped field by new name", () => {
+      const rows = [{ first_name: "Alice" }];
+      const config = { fields: { firstName: "first_name" }, returns: "/0/firstName" };
+
+      expect(shapeResponse(rows, config)).toBe("Alice");
     });
   });
 });

@@ -164,10 +164,8 @@ describe("parseSpec", () => {
           get: {
             "x-db": {
               query: "SELECT * FROM users WHERE id = $path.id",
-              response: {
-                type: "first",
-                fields: { firstName: "first_name" },
-              },
+              fields: { firstName: "first_name" },
+              returns: "/0",
             },
           },
         },
@@ -175,10 +173,8 @@ describe("parseSpec", () => {
     };
 
     const routes = parseSpec(spec);
-    expect(routes[0]?.xDb.response).toEqual({
-      type: "first",
-      fields: { firstName: "first_name" },
-    });
+    expect(routes[0]?.xDb.fields).toEqual({ firstName: "first_name" });
+    expect(routes[0]?.xDb.returns).toBe("/0");
   });
 });
 
@@ -236,17 +232,16 @@ paths:
           SELECT id, first_name, last_name
           FROM users
           WHERE id = $path.id
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
+        fields:
+          firstName: first_name
+          lastName: last_name
+        returns: /0
 `;
     const routes = parseSpec(yamlContent);
     expect(routes).toHaveLength(1);
     expect(routes[0]?.originalPath).toBe("/users/{id}");
-    expect(routes[0]?.xDb.response?.type).toBe("first");
-    expect(routes[0]?.xDb.response?.fields).toEqual({
+    expect(routes[0]?.xDb.returns).toBe("/0");
+    expect(routes[0]?.xDb.fields).toEqual({
       firstName: "first_name",
       lastName: "last_name",
     });
@@ -266,8 +261,7 @@ paths:
     post:
       x-db:
         query: INSERT INTO users (name) VALUES ($body.name)
-        response:
-          type: first
+        returns: /0
   /posts:
     get:
       x-db:
@@ -324,8 +318,7 @@ describe("parseSpec with JSON content", () => {
     "/items": {
       "get": {
         "x-db": {
-          "query": "SELECT * FROM items",
-          "response": { "type": "array" }
+          "query": "SELECT * FROM items"
         }
       }
     }
@@ -334,7 +327,8 @@ describe("parseSpec with JSON content", () => {
     const routes = parseSpec(jsonContent);
     expect(routes).toHaveLength(1);
     expect(routes[0]?.originalPath).toBe("/items");
-    expect(routes[0]?.xDb.response?.type).toBe("array");
+    // No returns means full array (default behavior)
+    expect(routes[0]?.xDb.returns).toBeUndefined();
   });
 
   it("parses JSON with leading whitespace", () => {

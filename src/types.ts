@@ -47,24 +47,22 @@ export interface XDbExtension {
 
   /**
    * Adapter name from the adapters config.
-   * Defaults to 'postgres' if omitted.
+   * Optional if only one adapter is configured.
    */
   adapter?: string;
 
-  /** Response shaping configuration */
-  response?: XDbResponse;
-}
-
-export interface XDbResponse {
   /**
-   * 'array' (default): Return all rows as array
-   * 'first': Return first row (404 if none)
-   * 'value': Return first column of first row as scalar
+   * Field mapping: { apiFieldName: db_column_name }
+   * Applied to every row before extraction.
    */
-  type?: "array" | "first" | "value";
-
-  /** Field mapping: { apiFieldName: sql_column_name } */
   fields?: Record<string, string>;
+
+  /**
+   * JSON Pointer (RFC 6901) for extracting from result array.
+   * Examples: "/0" (first row), "/0/total" (scalar from first row)
+   * If omitted, returns full array.
+   */
+  returns?: string;
 }
 
 /**

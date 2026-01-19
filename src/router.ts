@@ -141,10 +141,13 @@ class RouterImpl implements Router {
     const rows = await adapter.execute(interpolated);
 
     // Shape response
-    const responseBody = shapeResponse(rows, route.xDb.response);
+    const responseBody = shapeResponse(rows, {
+      fields: route.xDb.fields,
+      returns: route.xDb.returns,
+    });
 
-    // Handle 404 for 'first' type with no result
-    if (route.xDb.response?.type === "first" && responseBody === null) {
+    // Handle 404 for single-item extraction with no result
+    if (route.xDb.returns?.startsWith("/0") && responseBody === null) {
       throw new OpenApiDbError("NOT_FOUND", "Resource not found", 404);
     }
 

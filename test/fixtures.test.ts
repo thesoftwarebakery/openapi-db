@@ -35,21 +35,17 @@ describe("OpenAPI fixture parsing", () => {
     const getUserById = routes.find(
       (r) => r.method === "get" && r.originalPath === "/users/{id}"
     );
-    expect(getUserById?.xDb.response).toEqual({
-      type: "first",
-      fields: {
-        firstName: "first_name",
-        lastName: "last_name",
-        createdAt: "created_at",
-      },
+    expect(getUserById?.xDb.fields).toEqual({
+      firstName: "first_name",
+      lastName: "last_name",
+      createdAt: "created_at",
     });
+    expect(getUserById?.xDb.returns).toBe("/0");
 
     const getUserCount = routes.find(
       (r) => r.method === "get" && r.originalPath === "/stats/user-count"
     );
-    expect(getUserCount?.xDb.response).toEqual({
-      type: "value",
-    });
+    expect(getUserCount?.xDb.returns).toBe("/0/count");
   });
 
   it("extracts parameters from fixture", () => {

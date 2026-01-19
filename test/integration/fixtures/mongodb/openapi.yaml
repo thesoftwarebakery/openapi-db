@@ -23,11 +23,10 @@ paths:
           options:
             sort:
               first_name: 1
-        response:
-          fields:
-            id: _id
-            firstName: first_name
-            lastName: last_name
+        fields:
+          id: _id
+          firstName: first_name
+          lastName: last_name
 
     post:
       summary: Create user
@@ -42,12 +41,11 @@ paths:
             last_name: ${{ body.lastName }}
             tenant_id: ${{ auth.tenantId }}
             status: active
-        response:
-          type: first
-          fields:
-            id: _id
-            firstName: first_name
-            lastName: last_name
+        fields:
+          id: _id
+          firstName: first_name
+          lastName: last_name
+        returns: /0
 
   /users/count:
     get:
@@ -59,8 +57,7 @@ paths:
           operation: count
           filter:
             tenant_id: ${{ auth.tenantId }}
-        response:
-          type: first
+        returns: /0
 
   /users/stats:
     get:
@@ -96,12 +93,11 @@ paths:
           filter:
             _id: ${{ path.id }}
             tenant_id: ${{ auth.tenantId }}
-        response:
-          type: first
-          fields:
-            id: _id
-            firstName: first_name
-            lastName: last_name
+        fields:
+          id: _id
+          firstName: first_name
+          lastName: last_name
+        returns: /0
 
     delete:
       summary: Delete user
@@ -117,10 +113,9 @@ paths:
           filter:
             _id: ${{ path.id }}
             tenant_id: ${{ auth.tenantId }}
-        response:
-          type: first
-          fields:
-            id: _id
+        fields:
+          id: _id
+        returns: /0
 
   /users/{id}/status:
     patch:
@@ -140,10 +135,9 @@ paths:
           update:
             $set:
               status: ${{ body.status }}
-        response:
-          type: first
-          fields:
-            id: _id
-            firstName: first_name
-            lastName: last_name
-            status: status
+        fields:
+          id: _id
+          firstName: first_name
+          lastName: last_name
+          status: status
+        returns: /0

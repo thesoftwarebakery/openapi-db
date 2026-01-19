@@ -188,23 +188,42 @@ x-db:
   # String for SQL adapters, object for NoSQL adapters
   query: string | object
 
-  # Response shaping (optional)
-  response:
-    # How to shape the result
-    type: 'array' | 'first' | 'value'
+  # Field mapping: API field name -> SQL column name (optional)
+  fields:
+    apiFieldName: sql_column_name
 
-    # Field mapping: API field name -> SQL column name
-    fields:
-      apiFieldName: sql_column_name
+  # JSON Pointer for extraction (RFC 6901) (optional)
+  # Examples: /0 (first row), /0/total (scalar from first row)
+  returns: string
 ```
 
-### Response Types
+### Response Extraction (`returns`)
 
-| Type              | Description                      | No rows returns          |
-| ----------------- | -------------------------------- | ------------------------ |
-| `array` (default) | Return all rows as an array      | `[]`                     |
-| `first`           | Return first row as object       | Throws `NOT_FOUND` error |
-| `value`           | Return first column of first row | `null`                   |
+Use JSON Pointer syntax to extract specific values from the result array:
+
+| Pattern      | Description                      | No rows returns          |
+| ------------ | -------------------------------- | ------------------------ |
+| (omitted)    | Return all rows as an array      | `[]`                     |
+| `/0`         | First row as object              | Throws `NOT_FOUND` error |
+| `/0/field`   | Scalar: field from first row     | `null`                   |
+
+**Examples:**
+
+```yaml
+# Return full array (default)
+x-db:
+  query: SELECT * FROM users
+
+# Return first row as object
+x-db:
+  query: SELECT * FROM users WHERE id = ${{ path.id }}
+  returns: /0
+
+# Return scalar value (count)
+x-db:
+  query: SELECT COUNT(*)::int as total FROM users
+  returns: /0/total
+```
 
 ### Field Mapping
 
@@ -213,13 +232,12 @@ Map snake_case database columns to camelCase API fields:
 ```yaml
 x-db:
   query: SELECT id, first_name, last_name FROM users
-  response:
-    fields:
-      firstName: first_name
-      lastName: last_name
+  fields:
+    firstName: first_name
+    lastName: last_name
 ```
 
-Result: `{ "id": 1, "firstName": "Alice", "lastName": "Smith" }`
+Result: `[{ "id": 1, "firstName": "Alice", "lastName": "Smith" }]`
 
 ### MongoDB Query Format
 
@@ -271,8 +289,7 @@ x-db:
       name: ${{ body.name }}
       tenant_id: ${{ auth.tenantId }}
       created_at: ${{ now() }}
-  response:
-    type: first
+  returns: /0
 ```
 
 **Update operation:**
@@ -302,8 +319,7 @@ x-db:
     filter:
       _id: ${{ path.id }}
       tenant_id: ${{ auth.tenantId }}
-  response:
-    type: first
+  returns: /0
 ```
 
 ## Variable Interpolation
@@ -336,8 +352,7 @@ paths:
           SELECT * FROM users
           WHERE id = ${{ path.id }}
             AND tenant_id = ${{ auth.tenantId }}
-        response:
-          type: first
+        returns: /0
 ```
 
 ## Functions
@@ -518,11 +533,10 @@ paths:
             AND status = ${{ default(query.status, 'active') }}
           ORDER BY created_at DESC
           LIMIT ${{ default(query.limit, 20) }}
-        response:
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
 
     post:
       summary: Create user
@@ -544,12 +558,11 @@ paths:
           INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
           VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ body.email }}, ${{ auth.tenantId }}, ${{ now() }})
           RETURNING id, first_name, last_name, email, created_at
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
+        returns: /0
 
   /users/{id}:
     get:
@@ -566,12 +579,11 @@ paths:
           SELECT id, first_name, last_name, email, created_at
           FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
-            createdAt: created_at
+        fields:
+          firstName: first_name
+          lastName: last_name
+          createdAt: created_at
+        returns: /0
 
     delete:
       summary: Delete user
@@ -587,17 +599,15 @@ paths:
           DELETE FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
           RETURNING id
-        response:
-          type: first
+        returns: /0
 
   /users/count:
     get:
       summary: Get user count
       x-db:
         query: |
-          SELECT COUNT(*)::int FROM users WHERE tenant_id = ${{ auth.tenantId }}
-        response:
-          type: value
+          SELECT COUNT(*)::int as total FROM users WHERE tenant_id = ${{ auth.tenantId }}
+        returns: /0/total
 ```
 
 ## Array Parameters

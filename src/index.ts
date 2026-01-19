@@ -21,7 +21,6 @@ export type {
   CompiledRoute,
   RouteMatch,
   XDbExtension,
-  XDbResponse,
   ParsedQuery,
   InterpolationContext,
   AuthResolver,
@@ -29,8 +28,11 @@ export type {
   OpenApiParameter,
 } from "./types.js";
 
+// Response shaping
+export type { ResponseConfig } from "./response.js";
+export { shapeResponse, applyFieldMapping } from "./response.js";
+
 // Internal utilities (for advanced use cases)
 export { parseSpec } from "./parser.js";
 export { parseTemplate } from "./template.js";
 export { matchRoute, compileRoute } from "./matcher.js";
-export { shapeResponse, applyFieldMapping } from "./response.js";

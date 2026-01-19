@@ -1,34 +1,41 @@
-import type { XDbResponse } from "./types.js";
+import jsonpointer from "jsonpointer";
 
 /**
- * Shape query result rows according to response configuration.
+ * Response shaping configuration.
  */
-export function shapeResponse(
-  rows: Record<string, unknown>[],
-  config?: XDbResponse
-): unknown {
-  const mapped = applyFieldMapping(rows, config?.fields);
-  const type = config?.type ?? "array";
-
-  switch (type) {
-    case "array":
-      return mapped;
-    case "first":
-      return mapped[0] ?? null;
-    case "value": {
-      if (mapped.length === 0) return null;
-      const firstRow = mapped[0]!;
-      const keys = Object.keys(firstRow);
-      return keys.length > 0 ? firstRow[keys[0]!] : null;
-    }
-    default:
-      return mapped;
-  }
+export interface ResponseConfig {
+  /** Field mapping: { apiFieldName: db_column_name } */
+  fields?: Record<string, string>;
+  /** JSON Pointer for extraction (RFC 6901) */
+  returns?: string;
 }
 
 /**
- * Apply field mapping to transform SQL column names to API field names.
- * fields = { apiFieldName: sql_column_name }
+ * Shape query result rows according to response configuration.
+ * 1. Apply field mapping to each row
+ * 2. Extract using JSON Pointer if specified
+ */
+export function shapeResponse(
+  rows: Record<string, unknown>[],
+  config?: ResponseConfig
+): unknown {
+  // Step 1: Apply field mapping
+  let result: unknown = config?.fields
+    ? applyFieldMapping(rows, config.fields)
+    : rows;
+
+  // Step 2: Apply JSON Pointer extraction
+  if (config?.returns) {
+    result = jsonpointer.get(result as object, config.returns) ?? null;
+  }
+
+  return result;
+}
+
+/**
+ * Apply field mapping to transform database column names to API field names.
+ * fields = { apiFieldName: db_column_name }
+ * Unmapped columns are passed through unchanged.
  */
 export function applyFieldMapping(
   rows: Record<string, unknown>[],
@@ -36,10 +43,10 @@ export function applyFieldMapping(
 ): Record<string, unknown>[] {
   if (!fields) return rows;
 
-  // Build reverse mapping: sql_column -> apiField
+  // Build reverse mapping: db_column -> apiField
   const reverseMap: Record<string, string> = {};
-  for (const [apiField, sqlColumn] of Object.entries(fields)) {
-    reverseMap[sqlColumn] = apiField;
+  for (const [apiField, dbColumn] of Object.entries(fields)) {
+    reverseMap[dbColumn] = apiField;
   }
 
   return rows.map((row) => {

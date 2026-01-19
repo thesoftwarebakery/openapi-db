@@ -19,10 +19,9 @@ paths:
           WHERE tenant_id = ${{ auth.tenantId }}
             AND status = ${{ default(query.status, 'active') }}
           ORDER BY first_name
-        response:
-          fields:
-            firstName: first_name
-            lastName: last_name
+        fields:
+          firstName: first_name
+          lastName: last_name
 
     post:
       summary: Create user
@@ -31,19 +30,17 @@ paths:
           INSERT INTO users (id, first_name, last_name, tenant_id, status)
           VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ auth.tenantId }}, 'active')
           RETURNING id, first_name, last_name, status
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
+        fields:
+          firstName: first_name
+          lastName: last_name
+        returns: /0
 
   /users/count:
     get:
       summary: Get user count
       x-db:
-        query: SELECT COUNT(*)::int FROM users WHERE tenant_id = ${{ auth.tenantId }}
-        response:
-          type: value
+        query: SELECT COUNT(*)::int as count FROM users WHERE tenant_id = ${{ auth.tenantId }}
+        returns: /0/count
 
   /users/{id}:
     get:
@@ -57,11 +54,10 @@ paths:
           SELECT id, first_name, last_name, status
           FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
-        response:
-          type: first
-          fields:
-            firstName: first_name
-            lastName: last_name
+        fields:
+          firstName: first_name
+          lastName: last_name
+        returns: /0
 
     delete:
       summary: Delete user
@@ -74,5 +70,4 @@ paths:
           DELETE FROM users
           WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
           RETURNING id
-        response:
-          type: first
+        returns: /0
