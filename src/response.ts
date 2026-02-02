@@ -5,9 +5,9 @@ import jsonpointer from "jsonpointer";
  */
 export interface ResponseConfig {
   /** Field mapping: { apiFieldName: db_column_name } */
-  fields?: Record<string, string>;
+  fields?: Record<string, string> | undefined;
   /** JSON Pointer for extraction (RFC 6901) */
-  returns?: string;
+  returns?: string | undefined;
 }
 
 /**
