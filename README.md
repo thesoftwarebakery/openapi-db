@@ -1,516 +1,43 @@
 # openapi-db
 
-A lightweight, framework-agnostic library that serves REST API endpoints directly from an OpenAPI spec with SQL queries embedded via a custom `x-db` extension.
+Framework-agnostic library that serves REST API endpoints directly from an OpenAPI specification with embedded database queries.
+
+Define your API once in OpenAPI, add database queries via the `x-db` extension, and get automatic routing, parameter binding, and response shaping. No controller boilerplate.
 
 ## Features
 
-- **Framework-agnostic** - Works with raw Node.js, Express, Fastify, Hono, or any framework
-- **OpenAPI-driven** - Define your API once, get routing and database queries from the same spec
-- **SQL injection safe** - All variables become parameterized query placeholders
-- **Zero boilerplate** - No controllers, no route handlers, just OpenAPI + SQL
+- **OpenAPI-first**: Your spec is the source of truth
+- **Framework-agnostic**: Works with Express, Fastify, Hono, Koa, or raw Node.js
+- **Multiple databases**: PostgreSQL and MongoDB adapters included, or [build your own](docs/adapters/custom.md)
+- **Secure by default**: Parameterized queries prevent SQL/NoSQL injection
+- **Response shaping**: Field mapping and JSON Pointer extraction built-in
 
 ## Installation
 
 ```bash
-npm install openapi-db yaml
+npm install openapi-db
+```
 
-# Install database adapter(s) you need
-npm install pg          # PostgreSQL
-npm install mongodb     # MongoDB
+Install your database driver as a peer dependency:
+
+```bash
+# For PostgreSQL
+npm install pg
+
+# For MongoDB
+npm install mongodb
 ```
 
 ## Quick Start
 
-```typescript
-import { createRouter, PgAdapter } from "openapi-db";
-import { Pool } from "pg";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    postgres: new PgAdapter(pool),
-  },
-});
-
-// router.handle(req) returns { status, headers, body } or null
-```
-
-## API Reference
-
-### `createRouter(options): Promise<Router>`
-
-Creates a router from an OpenAPI spec with `x-db` extensions.
-
-```typescript
-interface RouterOptions {
-  // Path to OpenAPI spec file (YAML/JSON), or pre-parsed object
-  spec: string | OpenAPIDocument;
-
-  // Database adapters keyed by name
-  // Routes reference adapters via x-db.adapter field
-  adapters: Record<string, Adapter>;
-
-  // Optional auth resolver - called for routes that use ${{ auth.* }}
-  auth?: (req: IncomingMessage) => Promise<Record<string, unknown> | null>;
-}
-```
-
-### `Router.handle(req): Promise<RouterResponse | null>`
-
-Handles an incoming request. Returns `null` if no matching `x-db` route is found.
-
-```typescript
-interface RouterResponse {
-  status: number;
-  headers?: Record<string, string>;
-  body: unknown;
-}
-```
-
-### `OpenApiDbError`
-
-Typed error class thrown for various error conditions. Catch this to format error responses.
-
-```typescript
-class OpenApiDbError extends Error {
-  code: string; // Error code (see below)
-  status: number; // HTTP status code
-  details?: unknown; // Additional error details
-}
-```
-
-**Error codes:**
-
-- `VALIDATION_ERROR` - Boot-time validation failed
-- `AUTH_RESOLVER_MISSING` - Route uses `${{ auth }}` but no auth resolver provided
-- `AUTH_REQUIRED` - Auth resolver returned null
-- `UNKNOWN_FUNCTION` - Unknown function in template
-- `QUERY_ERROR` - Database query failed
-- `NOT_FOUND` - First-type response with no rows
-
-## Adapters
-
-Adapters handle database-specific query interpolation and execution. Each adapter is responsible for:
-
-- Validating query format at boot time
-- Interpolating `${{ }}` variables into database-specific parameterized queries
-- Executing queries and returning rows
-
-### Built-in Adapters
-
-#### `PgAdapter` - PostgreSQL
-
-```typescript
-import { PgAdapter } from "openapi-db";
-import { Pool } from "pg";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    postgres: new PgAdapter(pool),
-  },
-});
-```
-
-Uses `$1, $2, $3` parameterized query style. Requires `pg` package as a peer dependency.
-
-#### `MongoAdapter` - MongoDB
-
-```typescript
-import { MongoAdapter } from "openapi-db";
-import { MongoClient } from "mongodb";
-
-const client = new MongoClient(process.env.MONGODB_URI);
-await client.connect();
-const db = client.db("myapp");
-
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    mongo: new MongoAdapter(db),
-  },
-});
-```
-
-Supports object-based queries and aggregation pipelines. Requires `mongodb` package as a peer dependency.
-
-**Supported operations:** `find`, `findOne`, `insertOne`, `updateOne`, `replaceOne`, `deleteOne`, `aggregate`, `count`, `findOneAndUpdate`, `findOneAndDelete`, `bulkWrite`
-
-### Multiple Adapters
-
-You can configure multiple adapters (e.g., for read replicas or different databases):
-
-```typescript
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    primary: new PgAdapter(primaryPool),
-    replica: new PgAdapter(replicaPool),
-  },
-});
-```
-
-Routes specify which adapter to use via `x-db.adapter`:
+### 1. Define your OpenAPI spec with `x-db` extensions
 
 ```yaml
-x-db:
-  adapter: replica
-  query: SELECT * FROM users
-```
-
-If only one adapter is configured, `x-db.adapter` can be omitted.
-
-## The `x-db` Extension
-
-Add the `x-db` extension to any OpenAPI operation to generate a database-backed endpoint:
-
-```yaml
-paths:
-  /users:
-    get:
-      summary: List users
-      x-db:
-        query: SELECT * FROM users
-```
-
-### Extension Schema
-
-```yaml
-x-db:
-  # Adapter name from adapters config (optional if only one adapter)
-  adapter: string
-
-  # Query with variable interpolation (required)
-  # String for SQL adapters, object for NoSQL adapters
-  query: string | object
-
-  # Field mapping: API field name -> SQL column name (optional)
-  fields:
-    apiFieldName: sql_column_name
-
-  # JSON Pointer for extraction (RFC 6901) (optional)
-  # Examples: /0 (first row), /0/total (scalar from first row)
-  returns: string
-```
-
-### Response Extraction (`returns`)
-
-Use JSON Pointer syntax to extract specific values from the result array:
-
-| Pattern      | Description                      | No rows returns          |
-| ------------ | -------------------------------- | ------------------------ |
-| (omitted)    | Return all rows as an array      | `[]`                     |
-| `/0`         | First row as object              | Throws `NOT_FOUND` error |
-| `/0/field`   | Scalar: field from first row     | `null`                   |
-
-**Examples:**
-
-```yaml
-# Return full array (default)
-x-db:
-  query: SELECT * FROM users
-
-# Return first row as object
-x-db:
-  query: SELECT * FROM users WHERE id = ${{ path.id }}
-  returns: /0
-
-# Return scalar value (count)
-x-db:
-  query: SELECT COUNT(*)::int as total FROM users
-  returns: /0/total
-```
-
-### Field Mapping
-
-Map snake_case database columns to camelCase API fields:
-
-```yaml
-x-db:
-  query: SELECT id, first_name, last_name FROM users
-  fields:
-    firstName: first_name
-    lastName: last_name
-```
-
-Result: `[{ "id": 1, "firstName": "Alice", "lastName": "Smith" }]`
-
-### MongoDB Query Format
-
-MongoDB queries use an object format instead of SQL strings:
-
-**Standard operations:**
-
-```yaml
-x-db:
-  adapter: mongo
-  query:
-    collection: users
-    operation: find
-    filter:
-      tenant_id: ${{ auth.tenantId }}
-      status: ${{ default(query.status, 'active') }}
-    options:
-      limit: ${{ default(query.limit, 20) }}
-      sort:
-        created_at: -1
-```
-
-**Aggregation pipelines:**
-
-```yaml
-x-db:
-  adapter: mongo
-  query:
-    collection: users
-    pipeline:
-      - $match:
-          tenant_id: ${{ auth.tenantId }}
-      - $project:
-          firstName: "$first_name"
-          lastName: "$last_name"
-      - $limit: ${{ default(query.limit, 20) }}
-```
-
-**Insert operation:**
-
-```yaml
-x-db:
-  adapter: mongo
-  query:
-    collection: users
-    operation: insertOne
-    document:
-      _id: ${{ uuid() }}
-      name: ${{ body.name }}
-      tenant_id: ${{ auth.tenantId }}
-      created_at: ${{ now() }}
-  returns: /0
-```
-
-**Update operation:**
-
-```yaml
-x-db:
-  adapter: mongo
-  query:
-    collection: users
-    operation: updateOne
-    filter:
-      _id: ${{ path.id }}
-      tenant_id: ${{ auth.tenantId }}
-    update:
-      $set:
-        status: ${{ body.status }}
-```
-
-**Delete operation:**
-
-```yaml
-x-db:
-  adapter: mongo
-  query:
-    collection: users
-    operation: deleteOne
-    filter:
-      _id: ${{ path.id }}
-      tenant_id: ${{ auth.tenantId }}
-  returns: /0
-```
-
-## Variable Interpolation
-
-Variables in SQL queries are replaced with parameterized placeholders (`$1`, `$2`, etc.), preventing SQL injection.
-
-### Variable Sources
-
-| Syntax                    | Description                | Example                                                         |
-| ------------------------- | -------------------------- | --------------------------------------------------------------- |
-| `${{ path.name }}`        | URL path parameters        | `/users/{id}` → `${{ path.id }}`                                |
-| `${{ query.name }}`       | Query string parameters    | `?status=active` → `${{ query.status }}`                        |
-| `${{ body.field }}`       | Request body fields        | `{ "name": "Alice" }` → `${{ body.name }}`                      |
-| `${{ body.nested.path }}` | Nested body fields         | `{ "user": { "name": "Alice" } }` → `${{ body.user.name }}`     |
-| `${{ body }}`             | Entire request body        | For JSONB columns                                               |
-| `${{ auth.field }}`       | Auth resolver return value | `${{ auth.tenantId }}`                                          |
-
-### Example
-
-```yaml
-paths:
-  /users/{id}:
-    get:
-      parameters:
-        - name: id
-          in: path
-          required: true
-      x-db:
-        query: |
-          SELECT * FROM users
-          WHERE id = ${{ path.id }}
-            AND tenant_id = ${{ auth.tenantId }}
-        returns: /0
-```
-
-## Functions
-
-Helper functions for common operations:
-
-| Function                           | Description                                 | Example                             |
-| ---------------------------------- | ------------------------------------------- | ----------------------------------- |
-| `${{ default(value, fallback) }}`  | Returns fallback if value is null/undefined | `${{ default(query.limit, 20) }}`   |
-| `${{ now() }}`                     | Current timestamp                           | `${{ now() }}`                      |
-| `${{ uuid() }}`                    | Generate UUID v4                            | `${{ uuid() }}`                     |
-
-Functions can be nested:
-
-```yaml
-x-db:
-  query: |
-    SELECT * FROM users
-    WHERE status = ${{ default(query.status, 'active') }}
-    LIMIT ${{ default(query.limit, 20) }}
-```
-
-## Usage Examples
-
-### Raw Node.js
-
-```typescript
-import http from "http";
-import { Pool } from "pg";
-import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    postgres: new PgAdapter(pool),
-  },
-  auth: async (req) => {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return null;
-    const user = await verifyJwt(token);
-    return { userId: user.id, tenantId: user.tenantId };
-  },
-});
-
-http
-  .createServer(async (req, res) => {
-    try {
-      const response = await router.handle(req);
-
-      if (!response) {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Not found" }));
-        return;
-      }
-
-      res.writeHead(response.status, {
-        "Content-Type": "application/json",
-        ...response.headers,
-      });
-      res.end(JSON.stringify(response.body));
-    } catch (err) {
-      if (err instanceof OpenApiDbError) {
-        res.writeHead(err.status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err.code, message: err.message }));
-      } else {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Internal server error" }));
-      }
-    }
-  })
-  .listen(3000);
-```
-
-### Express
-
-```typescript
-import express from "express";
-import { Pool } from "pg";
-import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
-
-const app = express();
-app.use(express.json());
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    postgres: new PgAdapter(pool),
-  },
-  auth: async (req) => ({ tenantId: req.headers["x-tenant-id"] }),
-});
-
-// OpenAPI-db middleware
-app.use(async (req, res, next) => {
-  try {
-    const response = await router.handle(req);
-    if (!response) return next();
-    res.status(response.status).json(response.body);
-  } catch (err) {
-    if (err instanceof OpenApiDbError) {
-      res.status(err.status).json({ error: err.code, message: err.message });
-    } else {
-      next(err);
-    }
-  }
-});
-
-// Custom routes still work
-app.get("/health", (req, res) => res.json({ ok: true }));
-
-app.listen(3000);
-```
-
-### Fastify
-
-```typescript
-import Fastify from "fastify";
-import { Pool } from "pg";
-import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
-
-const fastify = Fastify();
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const router = await createRouter({
-  spec: "./openapi.yaml",
-  adapters: {
-    postgres: new PgAdapter(pool),
-  },
-});
-
-fastify.addHook("onRequest", async (req, reply) => {
-  try {
-    const response = await router.handle(req.raw);
-    if (response) {
-      reply.status(response.status).send(response.body);
-    }
-  } catch (err) {
-    if (err instanceof OpenApiDbError) {
-      reply.status(err.status).send({ error: err.code, message: err.message });
-    } else {
-      throw err;
-    }
-  }
-});
-
-fastify.get("/health", async () => ({ ok: true }));
-
-fastify.listen({ port: 3000 });
-```
-
-## Complete OpenAPI Example
-
-```yaml
-openapi: 3.0.3
+# openapi.yaml
+openapi: "3.0.3"
 info:
-  title: Users API
-  version: 1.0.0
+  title: My API
+  version: "1.0.0"
 
 paths:
   /users:
@@ -521,48 +48,14 @@ paths:
           in: query
           schema:
             type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
       x-db:
         query: |
-          SELECT id, first_name, last_name, email, created_at
+          SELECT id, first_name, last_name, status
           FROM users
-          WHERE tenant_id = ${{ auth.tenantId }}
-            AND status = ${{ default(query.status, 'active') }}
-          ORDER BY created_at DESC
-          LIMIT ${{ default(query.limit, 20) }}
+          WHERE status = ${{ default(query.status, 'active') }}
         fields:
           firstName: first_name
           lastName: last_name
-          createdAt: created_at
-
-    post:
-      summary: Create user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                firstName:
-                  type: string
-                lastName:
-                  type: string
-                email:
-                  type: string
-      x-db:
-        query: |
-          INSERT INTO users (id, first_name, last_name, email, tenant_id, created_at)
-          VALUES (${{ uuid() }}, ${{ body.firstName }}, ${{ body.lastName }}, ${{ body.email }}, ${{ auth.tenantId }}, ${{ now() }})
-          RETURNING id, first_name, last_name, email, created_at
-        fields:
-          firstName: first_name
-          lastName: last_name
-          createdAt: created_at
-        returns: /0
 
   /users/{id}:
     get:
@@ -571,101 +64,191 @@ paths:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
-            format: uuid
       x-db:
         query: |
-          SELECT id, first_name, last_name, email, created_at
+          SELECT id, first_name, last_name, status
           FROM users
-          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
+          WHERE id = ${{ path.id }}
         fields:
           firstName: first_name
           lastName: last_name
-          createdAt: created_at
         returns: /0
-
-    delete:
-      summary: Delete user
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      x-db:
-        query: |
-          DELETE FROM users
-          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
-          RETURNING id
-        returns: /0
-
-  /users/count:
-    get:
-      summary: Get user count
-      x-db:
-        query: |
-          SELECT COUNT(*)::int as total FROM users WHERE tenant_id = ${{ auth.tenantId }}
-        returns: /0/total
 ```
 
-## Array Parameters
+### 2. Create the router and handle requests
 
-Query parameters defined as arrays in the OpenAPI spec are automatically coerced:
+```typescript
+import { createRouter, PgAdapter, OpenApiDbError } from "openapi-db";
+import { Pool } from "pg";
+import express from "express";
 
-```yaml
-parameters:
-  - name: ids
-    in: query
-    schema:
-      type: array
-      items:
-        type: string
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: {
+    postgres: new PgAdapter(pool),
+  },
+});
+
+const app = express();
+app.use(express.json());
+
+app.use(async (req, res, next) => {
+  try {
+    const response = await router.handle(req);
+    if (!response) return next(); // No matching route
+    res.status(response.status).json(response.body);
+  } catch (err) {
+    if (err instanceof OpenApiDbError) {
+      res.status(err.status).json({ error: err.message });
+    } else {
+      next(err);
+    }
+  }
+});
+
+app.listen(3000);
 ```
 
-```
-GET /users?ids=1,2,3
-```
+That's it. `GET /users` and `GET /users/:id` now work, with automatic parameter binding, field mapping, and error handling.
+
+## The `x-db` Extension
+
+Add `x-db` to any OpenAPI operation to connect it to a database query:
 
 ```yaml
 x-db:
-  query: SELECT * FROM users WHERE id = ANY(${{ query.ids }})
+  # Required: the query to execute
+  query: SELECT * FROM users WHERE id = ${{ path.id }}
+
+  # Optional: which adapter to use (required if multiple adapters configured)
+  adapter: postgres
+
+  # Optional: map database columns to API field names
+  fields:
+    firstName: first_name
+    lastName: last_name
+
+  # Optional: JSON Pointer to extract from result array
+  returns: /0
 ```
 
-## Boot-time Validation
+## Variable Interpolation
 
-When `createRouter()` is called, the library validates:
+Use `${{ }}` syntax to inject request values into queries. All variables become parameterized placeholders, preventing injection attacks.
 
-1. **Adapter configuration** - If a route specifies `x-db.adapter`, that adapter must be configured
-2. **Query format** - Each adapter validates its query format (e.g., PgAdapter requires string queries)
-3. **Auth usage** - If any query uses `${{ auth.* }}` but no `auth` option is provided, an error is thrown
-4. **Spec parsing** - Invalid YAML/JSON specs throw `SPEC_PARSE_ERROR`
+| Source    | Example                | Description                       |
+| --------- | ---------------------- | --------------------------------- |
+| `path.*`  | `${{ path.id }}`       | URL path parameters               |
+| `query.*` | `${{ query.status }}`  | Query string parameters           |
+| `body.*`  | `${{ body.email }}`    | Request body fields               |
+| `auth.*`  | `${{ auth.tenantId }}` | Auth context (from your resolver) |
+
+### Built-in Functions
+
+| Function                   | Example                                  | Description                      |
+| -------------------------- | ---------------------------------------- | -------------------------------- |
+| `default(value, fallback)` | `${{ default(query.status, 'active') }}` | Use fallback if value is missing |
+| `uuid()`                   | `${{ uuid() }}`                          | Generate a UUID v4               |
+| `now()`                    | `${{ now() }}`                           | Current ISO 8601 timestamp       |
+
+## Response Shaping
+
+### Field Mapping
+
+Map snake_case database columns to camelCase API fields:
+
+```yaml
+fields:
+  firstName: first_name
+  lastName: last_name
+```
+
+### JSON Pointer Extraction
+
+Use `returns` to extract from the result array:
+
+| Value      | Result           | Use Case              |
+| ---------- | ---------------- | --------------------- |
+| (omitted)  | `[{...}, {...}]` | List endpoints        |
+| `/0`       | `{...}` or 404   | Single item endpoints |
+| `/0/count` | `42`             | Scalar values         |
+
+## Authentication
+
+Provide an auth resolver to inject user context into queries:
+
+```typescript
+const router = await createRouter({
+  spec: "./openapi.yaml",
+  adapters: { postgres: new PgAdapter(pool) },
+  auth: async (req) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    const user = await verifyToken(token);
+    return user ? { userId: user.id, tenantId: user.tenantId } : null;
+  },
+});
+```
+
+Then use `${{ auth.* }}` in queries for tenant isolation:
+
+```yaml
+x-db:
+  query: SELECT * FROM users WHERE tenant_id = ${{ auth.tenantId }}
+```
+
+Routes using `${{ auth.* }}` return 401 if the auth resolver returns `null`.
+
+## Error Handling
+
+Catch `OpenApiDbError` to handle errors:
+
+```typescript
+import { OpenApiDbError } from "openapi-db";
+
+try {
+  const response = await router.handle(req);
+} catch (err) {
+  if (err instanceof OpenApiDbError) {
+    // err.code: "NOT_FOUND", "AUTH_REQUIRED", "QUERY_ERROR", etc.
+    // err.status: HTTP status code
+    // err.message: Human-readable message
+  }
+}
+```
+
+| Code               | Status | Description                     |
+| ------------------ | ------ | ------------------------------- |
+| `NOT_FOUND`        | 404    | `returns: /0` with empty result |
+| `AUTH_REQUIRED`    | 401    | Auth resolver returned null     |
+| `QUERY_ERROR`      | 500    | Database query failed           |
+| `VALIDATION_ERROR` | 500    | Invalid spec or configuration   |
 
 ## Security Warning
 
 **Never publish or expose your OpenAPI spec when using openapi-db.**
 
-Unlike standard OpenAPI specs which describe your API contract,
-specs with `x-db` extensions contain implementation details:
+Unlike standard OpenAPI specs which describe your API contract, specs with `x-db` extensions contain implementation details: database schema, queries, authorization logic. Treat your spec file like source code, not documentation.
 
-- Database table and column names
-- SQL queries and access patterns
-- Authorization logic
-- Internal business rules
+**Recommendations:**
 
-Treat your spec file like source code, not documentation.
+- Keep separate public (documentation) and private (server) specs
+- Don't serve the raw spec from your API
+- Strip `x-db` extensions before generating client SDKs
 
-### Recommendations
+## Documentation
 
-1. **Separate specs** - Keep a public OpenAPI spec for documentation
-   and a private one with `x-db` extensions for your server
-2. **Git ignore patterns** - Consider naming convention like
-   `*.internal.yaml` and gitignoring if the repo is public
-3. **Disable Swagger UI** - Don't serve the raw spec from your API
-4. **Strip x-db in CI** - If you generate client SDKs, strip
-   extensions first
+### Adapters
+
+- [PostgreSQL](docs/adapters/postgres.md) - Setup, query syntax, examples
+- [MongoDB](docs/adapters/mongodb.md) - Setup, all operations, aggregation pipelines
+- [Custom Adapters](docs/adapters/custom.md) - Build your own adapter
+
+### Integration
+
+- [Framework Examples](docs/frameworks.md) - Express, Fastify, Hono, Koa
 
 ## License
 
-MIT
+ISC
