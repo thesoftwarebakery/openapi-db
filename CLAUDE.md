@@ -13,4 +13,5 @@
 
 ## Workflow
 
-6. **Small Commits**: Work in small chunks, commit after each stage. Build and tests should pass before each commit. Commit messages are short, single-line descriptions - the diff speaks for itself
+6. We use GitHub issues: read issue details to understand the scope of work. If, in the course of doing work, we identify another bug, potential feature, or work outside the scope of the work at hand, create a new issue for it, clearly outlining the work to be done.
+7. **Small Commits**: Work in small chunks, commit after each stage. Build and tests should pass before each commit. Commit messages are short, single-line descriptions - the diff speaks for itself
