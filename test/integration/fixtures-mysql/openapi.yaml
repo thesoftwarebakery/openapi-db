@@ -1,0 +1,63 @@
+openapi: "3.0.3"
+info:
+  title: MySQL Integration Test API
+  version: "1.0.0"
+
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      x-db:
+        adapter: mysql
+        query: |
+          SELECT id, first_name, last_name, status
+          FROM users
+          WHERE tenant_id = ${{ auth.tenantId }}
+            AND status = ${{ default(query.status, 'active') }}
+          ORDER BY first_name
+        fields:
+          firstName: first_name
+          lastName: last_name
+
+  /users/count:
+    get:
+      summary: Get user count
+      x-db:
+        adapter: mysql
+        query: SELECT COUNT(*) as count FROM users WHERE tenant_id = ${{ auth.tenantId }}
+        returns: /0/count
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        adapter: mysql
+        query: |
+          SELECT id, first_name, last_name, status
+          FROM users
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
+        fields:
+          firstName: first_name
+          lastName: last_name
+        returns: /0
+
+    delete:
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+      x-db:
+        adapter: mysql
+        query: |
+          DELETE FROM users
+          WHERE id = ${{ path.id }} AND tenant_id = ${{ auth.tenantId }}
