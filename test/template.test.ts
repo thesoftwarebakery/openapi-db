@@ -89,10 +89,10 @@ describe("tokenize", () => {
     expect(() => tokenize("${{ paht.id }}")).toThrow("Invalid variable source");
   });
 
-  it("throws on path/query/auth without property", () => {
-    expect(() => tokenize("${{ path }}")).toThrow("requires a property path");
-    expect(() => tokenize("${{ query }}")).toThrow("requires a property path");
-    expect(() => tokenize("${{ auth }}")).toThrow("requires a property path");
+  it("allows path/query/auth without property (returns entire object)", () => {
+    expect(tokenize("${{ path }}")).toEqual([{ type: "VARIABLE", source: "path", path: [] }]);
+    expect(tokenize("${{ query }}")).toEqual([{ type: "VARIABLE", source: "query", path: [] }]);
+    expect(tokenize("${{ auth }}")).toEqual([{ type: "VARIABLE", source: "auth", path: [] }]);
   });
 });
 
