@@ -248,6 +248,7 @@ Unlike standard OpenAPI specs which describe your API contract, specs with `x-db
 ### Integration
 
 - [Framework Examples](docs/frameworks.md) - Express, Fastify, Hono, Koa
+- [Validation](docs/validation.md) - Request/response validation with express-openapi-validator, Ajv
 
 ## License
 
