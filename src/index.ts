@@ -8,6 +8,7 @@ export type { ErrorCode } from "./errors.js";
 // Adapter types and implementations
 export type { Adapter, Context, InterpolationHelpers } from "./adapters/types.js";
 export { PgAdapter } from "./adapters/postgres/index.js";
+export { MysqlAdapter } from "./adapters/mysql/index.js";
 export { MongoAdapter } from "./adapters/mongodb/index.js";
 
 // Helpers (for custom adapter implementations)
